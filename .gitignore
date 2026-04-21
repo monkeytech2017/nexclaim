@@ -1,0 +1,34 @@
+# Binary
+nexclaim
+nexclaim.exe
+
+# Environment — ห้าม commit credentials
+.env
+.env.*
+!.env.example
+
+# Go
+vendor/
+*.test
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
