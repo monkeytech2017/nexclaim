@@ -58,6 +58,7 @@ type Deps struct {
 	CCodeRepo      store.CCodeRepo
 	ClaimBatchRepo store.ClaimBatchRepo
 	SendLogRepo    store.SendLogRepo
+	DashboardRepo  store.DashboardRepo
 	REPIngester    *store.REPIngester
 	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
 	Master validator.MasterValidator
@@ -143,6 +144,9 @@ func New(d Deps) *gin.Engine {
 
 	// Send-log audit trail (every network attempt to FDH/CHI)
 	r.GET("/api/v1/send-logs", listSendLogsHandler(d))
+
+	// Dashboard aggregate (batch + send + c_code summary for main page)
+	r.GET("/api/v1/dashboard/stats", listDashboardStatsHandler(d))
 
 	return r
 }

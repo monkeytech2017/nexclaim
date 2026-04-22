@@ -72,6 +72,7 @@ func runServer(args []string) {
 	var ccodeRepo store.CCodeRepo
 	var claimBatchRepo store.ClaimBatchRepo
 	var sendLogRepo store.SendLogRepo
+	var dashboardRepo store.DashboardRepo
 	var repIngester *store.REPIngester
 	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
@@ -90,6 +91,7 @@ func runServer(args []string) {
 			ccodeRepo = store.NewPgCCodeRepo(pg)
 			claimBatchRepo = store.NewPgClaimBatchRepo(pg)
 			sendLogRepo = store.NewPgSendLogRepo(pg)
+			dashboardRepo = store.NewPgDashboardRepo(pg)
 			repIngester = store.NewREPIngester(pg, ccodeRepo, fdh)
 
 			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
@@ -123,6 +125,7 @@ func runServer(args []string) {
 		CCodeRepo:      ccodeRepo,
 		ClaimBatchRepo: claimBatchRepo,
 		SendLogRepo:    sendLogRepo,
+		DashboardRepo:  dashboardRepo,
 		REPIngester:    repIngester,
 		Master:         master,
 		StatusLookup:  fdh,

@@ -503,6 +503,34 @@ export const sendLogsApi = {
   },
 }
 
+// ── Dashboard stats ──
+
+export interface DashboardStats {
+  summary: {
+    batches_total:     number
+    records_total:     number
+    records_errors:    number
+    ccodes_open:       number
+    avg_send_ms:       number
+    send_success_rate: number    // 0..1
+  }
+  by_format: { format: string; count: number; records: number }[]
+  by_status: { status: string; count: number }[]
+  by_day:    { day: string; formats: Record<string, number> }[]
+  top_ccodes:{ c_code: string; count: number; desc_sample: string }[]
+}
+
+export const dashboardApi = {
+  stats: (filter: { hcode?: string; period_from?: string; period_to?: string }) => {
+    const qs = new URLSearchParams()
+    if (filter.hcode)       qs.set('hcode', filter.hcode)
+    if (filter.period_from) qs.set('period_from', filter.period_from)
+    if (filter.period_to)   qs.set('period_to', filter.period_to)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<DashboardStats>(`/api/v1/dashboard/stats${suffix}`)
+  },
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {
