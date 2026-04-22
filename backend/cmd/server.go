@@ -10,6 +10,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/nexclaim/nexclaim/internal/auth"
 	"github.com/nexclaim/nexclaim/internal/batch"
 	"github.com/nexclaim/nexclaim/internal/config"
 	"github.com/nexclaim/nexclaim/internal/db"
@@ -74,6 +75,7 @@ func runServer(args []string) {
 	var sendLogRepo store.SendLogRepo
 	var dashboardRepo store.DashboardRepo
 	var repIngester *store.REPIngester
+	var authRepo auth.Repo
 	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
@@ -93,6 +95,7 @@ func runServer(args []string) {
 			sendLogRepo = store.NewPgSendLogRepo(pg)
 			dashboardRepo = store.NewPgDashboardRepo(pg)
 			repIngester = store.NewREPIngester(pg, ccodeRepo, fdh)
+			authRepo = store.NewPgAPIKeyRepo(pg)
 
 			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
 				fmt.Fprintf(os.Stderr, "[NexClaim] master validator load failed, falling back to noop: %v\n", err)
@@ -106,6 +109,11 @@ func runServer(args []string) {
 
 	ipdShareRoot := os.Getenv("IPD_SHARE_ROOT") // เช่น /shared/nexclaim/ipd
 
+	authEnabled := os.Getenv("AUTH_ENABLED") == "true"
+	if authEnabled && authRepo == nil {
+		fmt.Fprintln(os.Stderr, "[NexClaim] AUTH_ENABLED=true but no DB — auth middleware will pass through")
+	}
+
 	engine := server.New(server.Deps{
 		HCode:        hcode,
 		Extractor:    extr,
@@ -115,6 +123,8 @@ func runServer(args []string) {
 		Batches:      batches,
 		IPDShareRoot: ipdShareRoot,
 		ClaimRepo:    claimRepo,
+		AuthRepo:      authRepo,
+		AuthEnabled:   authEnabled,
 		HospitalRepo:  hospitalRepo,
 		DoctorRepo:    doctorRepo,
 		InsclMapRepo:  insclMapRepo,

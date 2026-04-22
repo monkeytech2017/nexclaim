@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexclaim/nexclaim/internal/auth"
 	"github.com/nexclaim/nexclaim/internal/batch"
 	"github.com/nexclaim/nexclaim/internal/extractor"
 	"github.com/nexclaim/nexclaim/internal/hisclient"
@@ -46,6 +47,10 @@ type Deps struct {
 	// ClaimRepo persists pipeline.Outcome → claim_batch/claim_record.
 	// If nil, runs are not persisted (NoopClaimRepo is used).
 	ClaimRepo store.ClaimRepo
+	// AuthRepo gates non-public endpoints when AuthEnabled is true.
+	// Nil = middleware becomes a pass-through (back-compat for dev + tests).
+	AuthRepo    auth.Repo
+	AuthEnabled bool
 	// HospitalRepo backs the /api/v1/master/hospitals admin endpoints.
 	// Nil = return 503 (admin CRUD requires a database).
 	HospitalRepo  store.HospitalRepo
@@ -70,32 +75,75 @@ type Deps struct {
 
 // New สร้าง gin engine โดยไม่ start HTTP listener.
 // Caller responsibility: run http.ListenAndServe(addr, engine).
+//
+// Route grouping (for auth gating):
+//
+//	Public (no auth):
+//	  GET  /healthz
+//	  POST /api/v1/auth/bootstrap          (only when AUTH_BOOTSTRAP_TOKEN set + table empty)
+//
+//	Hospital-scoped (hospital OR admin; hospital bound to its own hcode):
+//	  /api/v1/auth/whoami                  — reports caller identity
+//	  /api/v1/his/*                        — OPD 2-way + IPD share
+//	  /api/v1/claim/*                      — submission history + REP
+//	  /api/v1/ccodes*                      — REP feedback loop
+//	  /api/v1/send-logs
+//	  /api/v1/dashboard/stats
+//
+//	Admin-only:
+//	  /api/v1/master/*                     — master CRUD + bulk imports
+//	  POST /api/submit                     — dev/ops pipeline trigger
+//	  GET  /api/status/:txnId              — forward to FDH
+//
+// When AuthEnabled = false (default) or AuthRepo = nil, every middleware
+// becomes a pass-through — tests + dev laptops keep working without a DB.
 func New(d Deps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	// ── public ──
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "service": "nexclaim"})
 	})
+	r.POST("/api/v1/auth/bootstrap", bootstrapHandler(d))
 
-	api := r.Group("/api")
-	api.POST("/submit", submitHandler(d))
-	api.GET("/status/:txnId", statusHandler(d))
+	// ── authed root ──
+	authed := r.Group("", auth.Middleware(d.AuthRepo, d.AuthEnabled))
+	authed.GET("/api/v1/auth/whoami", whoamiHandler())
 
-	// OPD 2-Way endpoints (HIS → NexClaim → HIS)
-	his := r.Group("/api/v1/his")
-	his.POST("/opd/visits", receiveVisitsHandler(d))
+	// Admin-only: pipeline trigger + FDH status forward.
+	adminAPI := authed.Group("/api", auth.RequireRole(auth.RoleAdmin))
+	adminAPI.POST("/submit", submitHandler(d))
+	adminAPI.GET("/status/:txnId", statusHandler(d))
+
+	// Hospital-scoped group: HIS endpoints. Path :hcode matches via
+	// RequireHcodeMatch; batchId-scoped routes resolve hcode from the repo.
+	batchResolver := newBatchResolver(d.ClaimBatchRepo)
+	his := authed.Group("/api/v1/his")
+	his.POST("/opd/visits", receiveVisitsHandler(d)) // body carries hospital_code; handler validates
 	his.GET("/opd/batches", listBatchesHandler(d))
-	his.GET("/opd/batches/:batchId", getBatchHandler(d))
-	his.POST("/opd/batches/:batchId/process", processBatchHandler(d))
-
-	// IPD Share Folder ingestion
+	his.GET("/opd/batches/:batchId", auth.RequireBatchHcodeMatch(batchResolver), getBatchHandler(d))
+	his.POST("/opd/batches/:batchId/process", auth.RequireBatchHcodeMatch(batchResolver), processBatchHandler(d))
 	his.GET("/ipd/imports", listImportsHandler(d))
 	his.POST("/ipd/imports/:exportId", runImportHandler(d))
 
-	// Master data admin CRUD
-	master := r.Group("/api/v1/master")
+	// Hospital-scoped: claim history. Path/query :hcode enforced by middleware.
+	claim := authed.Group("/api/v1/claim")
+	claim.POST("/rep/:hcode/:period", auth.RequireHcodeMatch("hcode"), fetchREPHandler(d))
+	claim.GET("/batches", auth.RequireHcodeMatch("hcode"), listClaimBatchesHandler(d))
+	claim.GET("/batches/:batchId", auth.RequireBatchHcodeMatch(batchResolver), getClaimBatchHandler(d))
+
+	// Hospital-scoped: c-code feedback.
+	authed.GET("/api/v1/ccodes", auth.RequireHcodeMatch("hcode"), listCCodesHandler(d))
+	authed.PATCH("/api/v1/ccodes/:id/resolve", resolveCCodeHandler(d))
+
+	// Hospital-scoped: send-log audit + dashboard summary.
+	authed.GET("/api/v1/send-logs", auth.RequireHcodeMatch("hcode"), listSendLogsHandler(d))
+	authed.GET("/api/v1/dashboard/stats", auth.RequireHcodeMatch("hcode"), listDashboardStatsHandler(d))
+
+	// ── admin-only: master data CRUD + bulk imports ──
+	master := authed.Group("/api/v1/master", auth.RequireRole(auth.RoleAdmin))
 	master.GET("/hospitals", listHospitalsHandler(d))
 	master.POST("/hospitals", upsertHospitalHandler(d))
 	master.GET("/hospitals/:hcode", getHospitalHandler(d))
@@ -131,22 +179,6 @@ func New(d Deps) *gin.Engine {
 	master.POST("/field-maps", upsertFieldMapHandler(d))
 	master.POST("/field-maps/bulk", bulkFieldMapsHandler(d))
 	master.DELETE("/field-maps/:id", deleteFieldMapHandler(d))
-
-	// C-code (REP ingest + review)
-	claim := r.Group("/api/v1/claim")
-	claim.POST("/rep/:hcode/:period", fetchREPHandler(d))
-	r.GET("/api/v1/ccodes", listCCodesHandler(d))
-	r.PATCH("/api/v1/ccodes/:id/resolve", resolveCCodeHandler(d))
-
-	// Submission history (claim_batch + joined c-code counts)
-	claim.GET("/batches", listClaimBatchesHandler(d))
-	claim.GET("/batches/:batchId", getClaimBatchHandler(d))
-
-	// Send-log audit trail (every network attempt to FDH/CHI)
-	r.GET("/api/v1/send-logs", listSendLogsHandler(d))
-
-	// Dashboard aggregate (batch + send + c_code summary for main page)
-	r.GET("/api/v1/dashboard/stats", listDashboardStatsHandler(d))
 
 	return r
 }
@@ -296,6 +328,18 @@ func receiveVisitsHandler(d Deps) gin.HandlerFunc {
 				Message: "hospital_code, period, and non-empty visits are required",
 			})
 			return
+		}
+		// Hospital-scoped callers may only push visits for their own hcode.
+		// Body-level enforcement — RequireHcodeMatch middleware only inspects
+		// path/query params and doesn't parse the JSON body.
+		if ident, ok := auth.FromContext(c); ok && ident.Role == auth.RoleHospital {
+			if req.HospitalCode != ident.HCode {
+				c.JSON(http.StatusForbidden, hisclient.VisitListError{
+					Status: "ERROR", Error: "FORBIDDEN",
+					Message: fmt.Sprintf("hospital key bound to %q cannot push visits for %q", ident.HCode, req.HospitalCode),
+				})
+				return
+			}
 		}
 
 		// Per-visit validation: PID + required fields. สะสม error ก่อนตัดสิน accept/reject.

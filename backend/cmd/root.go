@@ -31,6 +31,8 @@ func Execute() {
 		runMigrate(os.Args[2:])
 	case "seed":
 		runSeed(os.Args[2:])
+	case "auth":
+		runAuth(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
 	default:
@@ -49,6 +51,9 @@ func printUsage() {
 	fmt.Println("  nexclaim server  [--addr :8080]")
 	fmt.Println("  nexclaim migrate status")
 	fmt.Println("  nexclaim seed master [--dir data/]")
+	fmt.Println("  nexclaim auth create-admin    --name <label>")
+	fmt.Println("  nexclaim auth create-hospital --hcode <5digits> --name <label>")
+	fmt.Println("  nexclaim auth list")
 }
 
 func runStatus(args []string) {

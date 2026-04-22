@@ -23,6 +23,27 @@ GRANT USAGE   ON SCHEMA   public   TO :"role";
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO :"role";
 GRANT USAGE,  SELECT                 ON ALL SEQUENCES IN SCHEMA public TO :"role";
 
+-- Explicit per-table grants (redundant with ALL TABLES above, but spelled out
+-- so a future reader sees exactly which app-writable tables exist). TRUNCATE
+-- is intentionally NOT granted — tests use DELETE FROM child → parent.
+DO $grants$
+DECLARE
+    t text;
+BEGIN
+    FOREACH t IN ARRAY ARRAY[
+        'm_hospital','m_doctor','m_inscl','m_agency','m_chrgitem','m_icd10','m_icd9cm','m_tmt',
+        'his_inscl_map','his_drug_map','his_doctor_map','his_icd_map','his_field_map',
+        'claim_batch','claim_record','c_code_log','send_log',
+        'opd_ingest_batch','opd_ingest_visit',
+        'api_key'
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename=t) THEN
+            EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO %I', t, :'role');
+        END IF;
+    END LOOP;
+END
+$grants$;
+
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES    TO :"role";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
