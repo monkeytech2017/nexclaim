@@ -284,6 +284,12 @@ export interface DrugMap {
   is_active:      boolean
 }
 
+export interface BulkResult {
+  total:    number
+  imported: number
+  errors?:  Array<{ row: number; key?: string; reason: string }>
+}
+
 export const drugMapsApi = {
   list:   (hcode?: string) =>
     request<{ items: DrugMap[] }>(`/api/v1/master/drug-maps${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
@@ -292,6 +298,10 @@ export const drugMapsApi = {
   delete: (hcode: string, hisDrugCode: string) =>
     request<void>(`/api/v1/master/drug-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(hisDrugCode)}`,
       { method: 'DELETE' }),
+  bulk:   (items: DrugMap[]) =>
+    request<BulkResult>('/api/v1/master/drug-maps/bulk', {
+      method: 'POST', body: JSON.stringify({ items }),
+    }),
 }
 
 // ── Master data: HIS doctor mapping ──
@@ -310,6 +320,10 @@ export const doctorMapsApi = {
   delete: (hcode: string, hisDoctorCode: string) =>
     request<void>(`/api/v1/master/doctor-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(hisDoctorCode)}`,
       { method: 'DELETE' }),
+  bulk:   (items: DoctorMap[]) =>
+    request<BulkResult>('/api/v1/master/doctor-maps/bulk', {
+      method: 'POST', body: JSON.stringify({ items }),
+    }),
 }
 
 // ── Master data: HIS ICD mapping ──
@@ -337,6 +351,10 @@ export const icdMapsApi = {
     request<void>(
       `/api/v1/master/icd-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(icdType)}/${encodeURIComponent(hisIcdCode)}`,
       { method: 'DELETE' }),
+  bulk:   (items: IcdMap[]) =>
+    request<BulkResult>('/api/v1/master/icd-maps/bulk', {
+      method: 'POST', body: JSON.stringify({ items }),
+    }),
 }
 
 // ── Labels ──

@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { drugMapsApi, hospitalsApi, type DrugMap } from '@/lib/api'
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '@/components/ui/feedback'
-import { Pencil, Trash2, Plus, X } from 'lucide-react'
+import { BulkImportModal } from '@/components/BulkImportModal'
+import { Pencil, Trash2, Plus, X, Upload } from 'lucide-react'
 
 export default function DrugMapsPage() {
   const qc = useQueryClient()
@@ -17,6 +18,7 @@ export default function DrugMapsPage() {
 
   const [editing, setEditing] = useState<DrugMap | null>(null)
   const [creating, setCreating] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const save = useMutation({
     mutationFn: (m: DrugMap) => drugMapsApi.upsert(m),
@@ -52,16 +54,25 @@ export default function DrugMapsPage() {
           </select>
           <span className="text-xs text-gray-400">{rows.length} รายการ</span>
         </div>
-        <button
-          onClick={() => {
-            setCreating(true)
-            setEditing({ hcode: hcodes[0] ?? '', his_drug_code: '', is_active: true })
-          }}
-          disabled={hcodes.length === 0}
-          className="text-xs px-3 py-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-800 disabled:opacity-50 inline-flex items-center gap-1.5"
-        >
-          <Plus className="w-3.5 h-3.5" /> เพิ่ม mapping
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setBulkOpen(true)}
+            disabled={hcodes.length === 0}
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            <Upload className="w-3.5 h-3.5" /> Bulk import (CSV)
+          </button>
+          <button
+            onClick={() => {
+              setCreating(true)
+              setEditing({ hcode: hcodes[0] ?? '', his_drug_code: '', is_active: true })
+            }}
+            disabled={hcodes.length === 0}
+            className="text-xs px-3 py-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-800 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" /> เพิ่ม mapping
+          </button>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -124,6 +135,25 @@ export default function DrugMapsPage() {
         <Dialog initial={editing} isCreate={creating} hcodes={hcodes} busy={save.isPending}
           onClose={() => { setEditing(null); setCreating(false) }}
           onSubmit={m => save.mutate(m)} />
+      )}
+
+      {bulkOpen && (
+        <BulkImportModal<DrugMap>
+          title="Bulk import drug mappings"
+          required={['hcode', 'his_drug_code']}
+          sampleHint="columns อื่น ๆ: tmt_code (24 หลัก ถ้ามี), his_drug_name, note, is_active (true/false)"
+          toItem={r => ({
+            hcode: r.hcode,
+            his_drug_code: r.his_drug_code,
+            tmt_code: r.tmt_code || undefined,
+            his_drug_name: r.his_drug_name || undefined,
+            note: r.note || undefined,
+            is_active: (r.is_active ?? 'true').toLowerCase() !== 'false',
+          })}
+          onSubmit={items => drugMapsApi.bulk(items)}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => qc.invalidateQueries({ queryKey: ['drug-maps'] })}
+        />
       )}
     </div>
   )

@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { doctorMapsApi, doctorsApi, hospitalsApi, type DoctorMap } from '@/lib/api'
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '@/components/ui/feedback'
-import { Pencil, Trash2, Plus, X } from 'lucide-react'
+import { BulkImportModal } from '@/components/BulkImportModal'
+import { Pencil, Trash2, Plus, X, Upload } from 'lucide-react'
 
 export default function DoctorMapsPage() {
   const qc = useQueryClient()
@@ -21,6 +22,7 @@ export default function DoctorMapsPage() {
 
   const [editing, setEditing] = useState<DoctorMap | null>(null)
   const [creating, setCreating] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const save = useMutation({
     mutationFn: (m: DoctorMap) => doctorMapsApi.upsert(m),
@@ -57,16 +59,25 @@ export default function DoctorMapsPage() {
           </select>
           <span className="text-xs text-gray-400">{rows.length} รายการ</span>
         </div>
-        <button
-          onClick={() => {
-            setCreating(true)
-            setEditing({ hcode: hcodes[0] ?? '', his_doctor_code: '' })
-          }}
-          disabled={hcodes.length === 0}
-          className="text-xs px-3 py-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-800 disabled:opacity-50 inline-flex items-center gap-1.5"
-        >
-          <Plus className="w-3.5 h-3.5" /> เพิ่ม mapping
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setBulkOpen(true)}
+            disabled={hcodes.length === 0}
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            <Upload className="w-3.5 h-3.5" /> Bulk import (CSV)
+          </button>
+          <button
+            onClick={() => {
+              setCreating(true)
+              setEditing({ hcode: hcodes[0] ?? '', his_doctor_code: '' })
+            }}
+            disabled={hcodes.length === 0}
+            className="text-xs px-3 py-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-800 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" /> เพิ่ม mapping
+          </button>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -129,6 +140,22 @@ export default function DoctorMapsPage() {
           busy={save.isPending}
           onClose={() => { setEditing(null); setCreating(false) }}
           onSubmit={m => save.mutate(m)} />
+      )}
+
+      {bulkOpen && (
+        <BulkImportModal<DoctorMap>
+          title="Bulk import doctor mappings"
+          required={['hcode', 'his_doctor_code']}
+          sampleHint="columns อื่น ๆ: doctor_id (FK → m_doctor.doctor_id)"
+          toItem={r => ({
+            hcode: r.hcode,
+            his_doctor_code: r.his_doctor_code,
+            doctor_id: r.doctor_id || undefined,
+          })}
+          onSubmit={items => doctorMapsApi.bulk(items)}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => qc.invalidateQueries({ queryKey: ['doctor-maps'] })}
+        />
       )}
     </div>
   )

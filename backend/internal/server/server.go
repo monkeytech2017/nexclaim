@@ -106,14 +106,17 @@ func New(d Deps) *gin.Engine {
 
 	master.GET("/drug-maps", listDrugMapsHandler(d))
 	master.POST("/drug-maps", upsertDrugMapHandler(d))
+	master.POST("/drug-maps/bulk", bulkDrugMapsHandler(d))
 	master.DELETE("/drug-maps/:hcode/:hisDrugCode", deleteDrugMapHandler(d))
 
 	master.GET("/doctor-maps", listDoctorMapsHandler(d))
 	master.POST("/doctor-maps", upsertDoctorMapHandler(d))
+	master.POST("/doctor-maps/bulk", bulkDoctorMapsHandler(d))
 	master.DELETE("/doctor-maps/:hcode/:hisDoctorCode", deleteDoctorMapHandler(d))
 
 	master.GET("/icd-maps", listIcdMapsHandler(d))
 	master.POST("/icd-maps", upsertIcdMapHandler(d))
+	master.POST("/icd-maps/bulk", bulkIcdMapsHandler(d))
 	master.DELETE("/icd-maps/:hcode/:icdType/:hisIcdCode", deleteIcdMapHandler(d))
 
 	return r
