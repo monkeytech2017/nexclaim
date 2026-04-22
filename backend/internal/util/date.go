@@ -42,3 +42,10 @@ func ParseHISDate(s string) (time.Time, error) {
 	}
 	return time.Time{}, fmt.Errorf("cannot parse date %q", s)
 }
+
+// MustParseHISDate returns zero-time on parse failure — convenient for
+// best-effort mappings where downstream validation will catch invalid dates.
+func MustParseHISDate(s string) time.Time {
+	t, _ := ParseHISDate(s)
+	return t
+}

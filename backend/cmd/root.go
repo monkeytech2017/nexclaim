@@ -4,10 +4,17 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"github.com/joho/godotenv"
+
+	"github.com/nexclaim/nexclaim/internal/config"
+	"github.com/nexclaim/nexclaim/internal/sender"
 )
 
-// Execute entry point สำหรับ CLI
-// ใช้ flag stdlib — เพิ่ม cobra หลัง go mod tidy บนเครื่องจริง
+// Execute entry point สำหรับ CLI.
+//
+// ใช้ flag stdlib (ไม่ cobra) เพื่อให้ dependency cross-module น้อยที่สุด —
+// เราจะย้ายไป cobra เมื่อมี subcommand tree ที่ซับซ้อนกว่านี้.
 func Execute() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -20,6 +27,8 @@ func Execute() {
 		runStatus(os.Args[2:])
 	case "server":
 		runServer(os.Args[2:])
+	case "-h", "--help", "help":
+		printUsage()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -31,23 +40,9 @@ func printUsage() {
 	fmt.Println("NexClaim — Every claim, every fund — connected.")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  nexclaim submit  --inscl <INSCL> --period <YYYYMM>")
+	fmt.Println("  nexclaim submit  --inscl <INSCL> --period <YYYYMM> [--dry-run] [--hcode <code>] [--agency <code>]")
 	fmt.Println("  nexclaim status  --txn-id <id>")
 	fmt.Println("  nexclaim server")
-}
-
-func runSubmit(args []string) {
-	fs := flag.NewFlagSet("submit", flag.ExitOnError)
-	inscl := fs.String("inscl", "", "รหัสสิทธิ เช่น UCS, 011, SSS")
-	period := fs.String("period", "", "รอบส่ง YYYYMM เช่น 202504")
-	dryRun := fs.Bool("dry-run", false, "ทดสอบโดยไม่ส่งจริง")
-	_ = fs.Parse(args)
-	if *inscl == "" || *period == "" {
-		fmt.Fprintln(os.Stderr, "ต้องระบุ --inscl และ --period")
-		os.Exit(1)
-	}
-	fmt.Printf("[NexClaim] submit INSCL=%s PERIOD=%s dry-run=%v\n", *inscl, *period, *dryRun)
-	// TODO: เรียก pipeline
 }
 
 func runStatus(args []string) {
@@ -56,13 +51,21 @@ func runStatus(args []string) {
 	_ = fs.Parse(args)
 	if *txnID == "" {
 		fmt.Fprintln(os.Stderr, "ต้องระบุ --txn-id")
+		os.Exit(2)
+	}
+
+	_ = godotenv.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("[NexClaim] checking status txnId=%s\n", *txnID)
-	// TODO: query FDH
+	c := sender.NewFDHClient(cfg.FDHBaseURL, cfg.FDHUsername, cfg.FDHPassword, cfg.FDHHCode)
+	res, err := c.GetStatus(*txnID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "status: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("txnId=%s status=%s msg=%s\n", res.TxnID, res.Status, res.Message)
 }
 
-func runServer(args []string) {
-	fmt.Println("[NexClaim] starting HTTP server on :8080")
-	// TODO: start gin server
-}

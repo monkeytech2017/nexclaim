@@ -17,6 +17,9 @@ vendor/
 *.swp
 *.swo
 
+# Claude Code working state (worktrees, plans)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

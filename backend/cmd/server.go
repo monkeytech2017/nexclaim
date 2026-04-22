@@ -1,0 +1,84 @@
+package cmd
+
+import (
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/joho/godotenv"
+
+	"github.com/nexclaim/nexclaim/internal/batch"
+	"github.com/nexclaim/nexclaim/internal/config"
+	"github.com/nexclaim/nexclaim/internal/extractor"
+	"github.com/nexclaim/nexclaim/internal/hisclient"
+	"github.com/nexclaim/nexclaim/internal/sender"
+	"github.com/nexclaim/nexclaim/internal/server"
+)
+
+func runServer(args []string) {
+	fs := flag.NewFlagSet("server", flag.ExitOnError)
+	addr := fs.String("addr", "", "listen address (default: :$PORT จาก .env หรือ :8080)")
+	_ = fs.Parse(args)
+
+	_ = godotenv.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config: %v\n", err)
+		os.Exit(1)
+	}
+
+	hcode := cfg.HospitalHCode
+	if hcode == "" {
+		hcode = cfg.FDHHCode
+	}
+
+	fdh := sender.NewFDHClient(cfg.FDHBaseURL, cfg.FDHUsername, cfg.FDHPassword, hcode)
+	chi := sender.NewCHIClient(cfg.CHIBaseURL, cfg.CHIUsername, cfg.CHIPassword).WithHCode(hcode)
+
+	// Extractor: เริ่มต้นเป็น in-memory (empty). ต่อ DB-backed extractor
+	// ใน step ถัดไปเมื่อ his_field_map migration พร้อม.
+	extr := extractor.NewMemoryExtractor()
+
+	// OPD 2-Way: HIS client + batch store
+	hisURL := os.Getenv("HIS_API_BASE_URL")
+	hisToken := os.Getenv("HIS_API_TOKEN")
+	var hisCli *hisclient.Client
+	if hisURL != "" {
+		opts := []hisclient.Option{}
+		if hisToken != "" {
+			opts = append(opts, hisclient.WithBearerToken(hisToken))
+		}
+		hisCli = hisclient.New(hisURL, opts...)
+	}
+	batches := batch.New()
+
+	ipdShareRoot := os.Getenv("IPD_SHARE_ROOT") // เช่น /shared/nexclaim/ipd
+
+	engine := server.New(server.Deps{
+		HCode:        hcode,
+		Extractor:    extr,
+		FDH:          fdh,
+		CHI:          chi,
+		HISClient:    hisCli,
+		Batches:      batches,
+		IPDShareRoot: ipdShareRoot,
+		StatusLookup: fdh,
+	})
+
+	listen := *addr
+	if listen == "" {
+		listen = ":" + cfg.Port
+	}
+	srv := &http.Server{
+		Addr:              listen,
+		Handler:           engine,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	fmt.Printf("[NexClaim] HTTP server listening on %s (hcode=%s)\n", listen, hcode)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Fprintf(os.Stderr, "server: %v\n", err)
+		os.Exit(1)
+	}
+}
