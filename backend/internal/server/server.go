@@ -54,6 +54,8 @@ type Deps struct {
 	DrugMapRepo   store.DrugMapRepo
 	DoctorMapRepo store.DoctorMapRepo
 	IcdMapRepo    store.IcdMapRepo
+	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
+	Master validator.MasterValidator
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
 	StatusLookup interface {
 		GetStatus(txnID string) (*sender.SubmitResult, error)
@@ -191,6 +193,7 @@ func submitHandler(d Deps) gin.HandlerFunc {
 			Extr:   d.Extractor,
 			FDH:    d.FDH,
 			CHI:    d.CHI,
+			Master: d.Master,
 		})
 		// We still return 200 + body when err != nil, because out can carry
 		// useful partial info (validation errors, per-submission errors).
@@ -388,6 +391,7 @@ func processBatchHandler(d Deps) gin.HandlerFunc {
 				Extr:   apiExtr,
 				FDH:    d.FDH,
 				CHI:    d.CHI,
+				Master: d.Master,
 			})
 			if !dryRun {
 				persistRun(ctx, d, b.HospitalCode, b.Period, out)
@@ -523,6 +527,7 @@ func runImportHandler(d Deps) gin.HandlerFunc {
 				Extr:   mem,
 				FDH:    d.FDH,
 				CHI:    d.CHI,
+				Master: d.Master,
 			})
 			if !dryRun {
 				persistRun(ctx, d, meta.HospitalCode, meta.Period, out)

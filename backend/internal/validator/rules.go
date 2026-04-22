@@ -4,8 +4,12 @@ import (
 	"github.com/nexclaim/nexclaim/internal/model"
 )
 
-// Validate ตรวจสอบ OPD visit ตาม business rules แยกตามสิทธิ
-func ValidateOPD(visit model.OPDVisit) []ValidationError {
+// ValidateOPD ตรวจสอบ OPD visit ตาม business rules + master lookups.
+// master = nil → bypass ICD/TMT checks (useful ใน tests / bootstrap ก่อน seed).
+func ValidateOPD(visit model.OPDVisit, master MasterValidator) []ValidationError {
+	if master == nil {
+		master = NoopMaster{}
+	}
 	var errs []ValidationError
 
 	// กฎทั่วไป
@@ -31,19 +35,38 @@ func ValidateOPD(visit model.OPDVisit) []ValidationError {
 
 	// กฎ SSO — DRDX/DROPID บังคับทุก record
 	if visit.Patient.INSCL == model.INSCL_SSS || visit.Patient.INSCL == model.INSCL_SS4 {
-		for i, dx := range visit.Diagnoses {
+		for _, dx := range visit.Diagnoses {
 			if dx.DoctorID == "" {
 				errs = append(errs, ValidationError{Field: "DRDX", Value: "", Reason: "SSO: DRDX บังคับทุก diagnosis record", CCode: "C130"})
-				_ = i
 			}
+		}
+	}
+
+	// Master lookups — ตรวจทุก code ที่ยังไม่ว่าง
+	for _, dx := range visit.Diagnoses {
+		if dx.Code != "" && !master.IsValidICD10(dx.Code) {
+			errs = append(errs, ValidationError{Field: "ICD10", Value: dx.Code, CCode: "C101", Reason: "ICD-10 ไม่อยู่ใน master"})
+		}
+	}
+	for _, op := range visit.Ops {
+		if op.Code != "" && !master.IsValidICD9CM(op.Code) {
+			errs = append(errs, ValidationError{Field: "ICD9CM", Value: op.Code, Reason: "ICD-9CM ไม่อยู่ใน master"})
+		}
+	}
+	for _, d := range visit.Drugs {
+		if d.TMTID != "" && !master.IsValidTMT(d.TMTID) {
+			errs = append(errs, ValidationError{Field: "TMT", Value: d.TMTID, Reason: "TMT code ไม่อยู่ใน master"})
 		}
 	}
 
 	return errs
 }
 
-// ValidateIPD ตรวจสอบ IPD admit
-func ValidateIPD(admit model.IPDAdmit) []ValidationError {
+// ValidateIPD ตรวจสอบ IPD admit ตาม business rules + master lookups.
+func ValidateIPD(admit model.IPDAdmit, master MasterValidator) []ValidationError {
+	if master == nil {
+		master = NoopMaster{}
+	}
 	var errs []ValidationError
 
 	if !IsValidAN(admit.AN) {
@@ -61,6 +84,26 @@ func ValidateIPD(admit model.IPDAdmit) []ValidationError {
 		}
 		if admit.DRG == nil || admit.DRG.Code == "" {
 			errs = append(errs, ValidationError{Field: "DRGCODE", Value: "", Reason: "CSMBS/LGO: DRGCODE บังคับ"})
+		}
+	}
+
+	// Master lookups — ICD-10 (primary + comorbidity + complication + external)
+	for _, dx := range admit.Diagnoses {
+		if dx.Code != "" && !master.IsValidICD10(dx.Code) {
+			errs = append(errs, ValidationError{Field: "ICD10", Value: dx.Code, CCode: "C101", Reason: "ICD-10 ไม่อยู่ใน master"})
+		}
+	}
+	if admit.AdmDx != "" && !master.IsValidICD10(admit.AdmDx) {
+		errs = append(errs, ValidationError{Field: "ADMDX", Value: admit.AdmDx, CCode: "C101", Reason: "ADMDX ICD-10 ไม่อยู่ใน master"})
+	}
+	for _, op := range admit.Ops {
+		if op.Code != "" && !master.IsValidICD9CM(op.Code) {
+			errs = append(errs, ValidationError{Field: "ICD9CM", Value: op.Code, Reason: "ICD-9CM ไม่อยู่ใน master"})
+		}
+	}
+	for _, d := range admit.Drugs {
+		if d.TMTID != "" && !master.IsValidTMT(d.TMTID) {
+			errs = append(errs, ValidationError{Field: "TMT", Value: d.TMTID, Reason: "TMT code ไม่อยู่ใน master"})
 		}
 	}
 

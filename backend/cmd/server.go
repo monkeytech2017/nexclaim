@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/nexclaim/nexclaim/internal/sender"
 	"github.com/nexclaim/nexclaim/internal/server"
 	"github.com/nexclaim/nexclaim/internal/store"
+	"github.com/nexclaim/nexclaim/internal/validator"
 )
 
 func runServer(args []string) {
@@ -64,6 +66,7 @@ func runServer(args []string) {
 	var drugMapRepo store.DrugMapRepo
 	var doctorMapRepo store.DoctorMapRepo
 	var icdMapRepo store.IcdMapRepo
+	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
 			fmt.Fprintf(os.Stderr, "[NexClaim] DB connect failed, using in-memory store: %v\n", err)
@@ -76,6 +79,13 @@ func runServer(args []string) {
 			drugMapRepo = store.NewPgDrugMapRepo(pg)
 			doctorMapRepo = store.NewPgDoctorMapRepo(pg)
 			icdMapRepo = store.NewPgIcdMapRepo(pg)
+
+			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
+				fmt.Fprintf(os.Stderr, "[NexClaim] master validator load failed, falling back to noop: %v\n", err)
+			} else {
+				master = mv
+				fmt.Printf("[NexClaim] master validator loaded (%s)\n", counts)
+			}
 			fmt.Printf("[NexClaim] postgres store wired (%s/%s)\n", cfg.DBHost, cfg.DBName)
 		}
 	}
@@ -97,6 +107,7 @@ func runServer(args []string) {
 		DrugMapRepo:   drugMapRepo,
 		DoctorMapRepo: doctorMapRepo,
 		IcdMapRepo:    icdMapRepo,
+		Master:        master,
 		StatusLookup:  fdh,
 	})
 
