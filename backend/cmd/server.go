@@ -54,17 +54,19 @@ func runServer(args []string) {
 		}
 		hisCli = hisclient.New(hisURL, opts...)
 	}
-	// Batch store + ClaimRepo: DB-backed ถ้า config มี DB_USER (Postgres reachable),
-	// ไม่เช่นนั้น fallback เป็น in-memory + noop repo.
+	// Batch store + ClaimRepo + HospitalRepo: DB-backed ถ้า config มี DB_USER,
+	// ไม่เช่นนั้น batch = in-memory, claim = noop, hospital = nil (503).
 	var batches batch.Store = batch.NewMemory()
 	var claimRepo store.ClaimRepo = store.NoopClaimRepo{}
+	var hospitalRepo store.HospitalRepo
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
 			fmt.Fprintf(os.Stderr, "[NexClaim] DB connect failed, using in-memory store: %v\n", err)
 		} else {
 			batches = batch.NewPostgres(pg)
 			claimRepo = store.NewPg(pg)
-			fmt.Printf("[NexClaim] batch store + claim_repo: postgres (%s/%s)\n", cfg.DBHost, cfg.DBName)
+			hospitalRepo = store.NewPgHospitalRepo(pg)
+			fmt.Printf("[NexClaim] postgres store wired (%s/%s)\n", cfg.DBHost, cfg.DBName)
 		}
 	}
 
@@ -79,6 +81,7 @@ func runServer(args []string) {
 		Batches:      batches,
 		IPDShareRoot: ipdShareRoot,
 		ClaimRepo:    claimRepo,
+		HospitalRepo: hospitalRepo,
 		StatusLookup: fdh,
 	})
 

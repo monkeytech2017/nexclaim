@@ -197,6 +197,35 @@ export const ipdApi = {
     ),
 }
 
+// ── Master data: Hospitals ──
+
+export interface Hospital {
+  hcode:       string
+  name_th:     string
+  changwat?:   string
+  amphur?:     string
+  his_db_key?: string
+  is_active:   boolean
+  created_at?: string
+}
+
+export const hospitalsApi = {
+  list:   () => request<{ hospitals: Hospital[] }>('/api/v1/master/hospitals'),
+  get:    (hcode: string) => request<Hospital>(`/api/v1/master/hospitals/${encodeURIComponent(hcode)}`),
+  create: (h: Hospital) =>
+    request<Hospital>('/api/v1/master/hospitals', {
+      method: 'POST',
+      body: JSON.stringify(h),
+    }),
+  update: (hcode: string, h: Partial<Hospital>) =>
+    request<Hospital>(`/api/v1/master/hospitals/${encodeURIComponent(hcode)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...h, hcode }),
+    }),
+  delete: (hcode: string) =>
+    request<void>(`/api/v1/master/hospitals/${encodeURIComponent(hcode)}`, { method: 'DELETE' }),
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {

@@ -46,6 +46,9 @@ type Deps struct {
 	// ClaimRepo persists pipeline.Outcome → claim_batch/claim_record.
 	// If nil, runs are not persisted (NoopClaimRepo is used).
 	ClaimRepo store.ClaimRepo
+	// HospitalRepo backs the /api/v1/master/hospitals admin endpoints.
+	// Nil = return 503 (admin CRUD requires a database).
+	HospitalRepo store.HospitalRepo
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
 	StatusLookup interface {
 		GetStatus(txnID string) (*sender.SubmitResult, error)
@@ -77,6 +80,14 @@ func New(d Deps) *gin.Engine {
 	// IPD Share Folder ingestion
 	his.GET("/ipd/imports", listImportsHandler(d))
 	his.POST("/ipd/imports/:exportId", runImportHandler(d))
+
+	// Master data admin CRUD
+	master := r.Group("/api/v1/master")
+	master.GET("/hospitals", listHospitalsHandler(d))
+	master.POST("/hospitals", upsertHospitalHandler(d))
+	master.GET("/hospitals/:hcode", getHospitalHandler(d))
+	master.PATCH("/hospitals/:hcode", upsertHospitalHandler(d))
+	master.DELETE("/hospitals/:hcode", deleteHospitalHandler(d))
 
 	return r
 }
@@ -577,6 +588,85 @@ func statusHandler(d Deps) gin.HandlerFunc {
 			"status":  res.Status,
 			"message": res.Message,
 		})
+	}
+}
+
+// ── /api/v1/master/hospitals ──
+
+func listHospitalsHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.HospitalRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hospital repo not configured"})
+			return
+		}
+		rows, err := d.HospitalRepo.List(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"hospitals": rows})
+	}
+}
+
+func getHospitalHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.HospitalRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hospital repo not configured"})
+			return
+		}
+		h, err := d.HospitalRepo.Get(c.Request.Context(), c.Param("hcode"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, h)
+	}
+}
+
+func upsertHospitalHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.HospitalRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hospital repo not configured"})
+			return
+		}
+		var body store.Hospital
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		// For PATCH /hospitals/:hcode, prefer path param over body.
+		if param := c.Param("hcode"); param != "" {
+			body.HCode = param
+		}
+		h, err := d.HospitalRepo.Upsert(c.Request.Context(), body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, h)
+	}
+}
+
+func deleteHospitalHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.HospitalRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hospital repo not configured"})
+			return
+		}
+		err := d.HospitalRepo.Delete(c.Request.Context(), c.Param("hcode"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
 	}
 }
 

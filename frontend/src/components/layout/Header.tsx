@@ -4,11 +4,12 @@ import { useQuery } from '@tanstack/react-query'
 import { health } from '@/lib/api'
 
 const titles: Record<string, string> = {
-  '/dashboard':    'ภาพรวม',
-  '/opd-batches':  'OPD Batches (HIS 2-way)',
-  '/ipd-imports':  'IPD Imports (Share folder)',
-  '/claims':       'ส่ง Claim',
-  '/history':      'ประวัติการส่ง',
+  '/dashboard':       'ภาพรวม',
+  '/opd-batches':     'OPD Batches (HIS 2-way)',
+  '/ipd-imports':     'IPD Imports (Share folder)',
+  '/claims':          'ส่ง Claim',
+  '/history':         'ประวัติการส่ง',
+  '/admin/hospitals': 'โรงพยาบาล',
 }
 
 function titleFor(pathname: string): string {
