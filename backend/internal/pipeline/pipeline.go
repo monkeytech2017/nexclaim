@@ -48,8 +48,9 @@ type Options struct {
 	Agency model.Agency // override สำหรับ OFC (ถ้าไม่ระบุจะดึงจาก Patient.AgencyCode)
 	DryRun bool
 	Extr   extractor.Extractor
-	FDH    FDHSubmitter // required when route → FDH + !DryRun
-	CHI    CHISubmitter // required when route → CHI (SSS/SS4) + !DryRun
+	FDH    FDHSubmitter            // required when route → FDH + !DryRun
+	CHI    CHISubmitter            // required when route → CHI (SSS/SS4) + !DryRun
+	Master validator.MasterValidator // nil → NoopMaster (skip ICD/TMT checks)
 }
 
 // Submission = หนึ่ง format output หนึ่งรอบส่ง
@@ -104,11 +105,15 @@ func Run(ctx context.Context, opt Options) (*Outcome, error) {
 		OPD:      res.OPD,
 		IPD:      res.IPD,
 	}
+	master := opt.Master
+	if master == nil {
+		master = validator.NoopMaster{}
+	}
 	for _, v := range res.OPD {
-		out.ValidationErrors = append(out.ValidationErrors, validator.ValidateOPD(v)...)
+		out.ValidationErrors = append(out.ValidationErrors, validator.ValidateOPD(v, master)...)
 	}
 	for _, a := range res.IPD {
-		out.ValidationErrors = append(out.ValidationErrors, validator.ValidateIPD(a)...)
+		out.ValidationErrors = append(out.ValidationErrors, validator.ValidateIPD(a, master)...)
 	}
 
 	dispatchFormats(opt, res, out)

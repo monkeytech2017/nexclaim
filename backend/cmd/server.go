@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/nexclaim/nexclaim/internal/sender"
 	"github.com/nexclaim/nexclaim/internal/server"
 	"github.com/nexclaim/nexclaim/internal/store"
+	"github.com/nexclaim/nexclaim/internal/validator"
 )
 
 func runServer(args []string) {
@@ -54,17 +56,43 @@ func runServer(args []string) {
 		}
 		hisCli = hisclient.New(hisURL, opts...)
 	}
-	// Batch store + ClaimRepo: DB-backed ถ้า config มี DB_USER (Postgres reachable),
-	// ไม่เช่นนั้น fallback เป็น in-memory + noop repo.
+	// Batch store + ClaimRepo + HospitalRepo: DB-backed ถ้า config มี DB_USER,
+	// ไม่เช่นนั้น batch = in-memory, claim = noop, hospital = nil (503).
 	var batches batch.Store = batch.NewMemory()
 	var claimRepo store.ClaimRepo = store.NoopClaimRepo{}
+	var hospitalRepo store.HospitalRepo
+	var doctorRepo store.DoctorRepo
+	var insclMapRepo store.InsclMapRepo
+	var drugMapRepo store.DrugMapRepo
+	var doctorMapRepo store.DoctorMapRepo
+	var icdMapRepo store.IcdMapRepo
+	var fieldMapRepo store.FieldMapRepo
+	var ccodeRepo store.CCodeRepo
+	var repIngester *store.REPIngester
+	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
 			fmt.Fprintf(os.Stderr, "[NexClaim] DB connect failed, using in-memory store: %v\n", err)
 		} else {
 			batches = batch.NewPostgres(pg)
 			claimRepo = store.NewPg(pg)
-			fmt.Printf("[NexClaim] batch store + claim_repo: postgres (%s/%s)\n", cfg.DBHost, cfg.DBName)
+			hospitalRepo = store.NewPgHospitalRepo(pg)
+			doctorRepo = store.NewPgDoctorRepo(pg)
+			insclMapRepo = store.NewPgInsclMapRepo(pg)
+			drugMapRepo = store.NewPgDrugMapRepo(pg)
+			doctorMapRepo = store.NewPgDoctorMapRepo(pg)
+			icdMapRepo = store.NewPgIcdMapRepo(pg)
+			fieldMapRepo = store.NewPgFieldMapRepo(pg)
+			ccodeRepo = store.NewPgCCodeRepo(pg)
+			repIngester = store.NewREPIngester(pg, ccodeRepo, fdh)
+
+			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
+				fmt.Fprintf(os.Stderr, "[NexClaim] master validator load failed, falling back to noop: %v\n", err)
+			} else {
+				master = mv
+				fmt.Printf("[NexClaim] master validator loaded (%s)\n", counts)
+			}
+			fmt.Printf("[NexClaim] postgres store wired (%s/%s)\n", cfg.DBHost, cfg.DBName)
 		}
 	}
 
@@ -79,7 +107,17 @@ func runServer(args []string) {
 		Batches:      batches,
 		IPDShareRoot: ipdShareRoot,
 		ClaimRepo:    claimRepo,
-		StatusLookup: fdh,
+		HospitalRepo:  hospitalRepo,
+		DoctorRepo:    doctorRepo,
+		InsclMapRepo:  insclMapRepo,
+		DrugMapRepo:   drugMapRepo,
+		DoctorMapRepo: doctorMapRepo,
+		IcdMapRepo:    icdMapRepo,
+		FieldMapRepo:  fieldMapRepo,
+		CCodeRepo:     ccodeRepo,
+		REPIngester:   repIngester,
+		Master:        master,
+		StatusLookup:  fdh,
 	})
 
 	listen := *addr

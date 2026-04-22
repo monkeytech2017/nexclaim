@@ -21,8 +21,10 @@ func TestMasterLoader_Pg(t *testing.T) {
 	}
 	defer conn.Close()
 
-	if _, err := conn.Exec(`TRUNCATE m_icd10, m_icd9cm, m_tmt_drug RESTART IDENTITY`); err != nil {
-		t.Fatalf("truncate: %v — is migration 001 applied?", err)
+	for _, q := range []string{`DELETE FROM m_icd10`, `DELETE FROM m_icd9cm`, `DELETE FROM m_tmt_drug`} {
+		if _, err := conn.Exec(q); err != nil {
+			t.Fatalf("cleanup %q: %v — is migration 001 applied?", q, err)
+		}
 	}
 
 	// Relative from tests/ dir, the data/ folder lives two levels up.

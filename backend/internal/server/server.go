@@ -46,6 +46,19 @@ type Deps struct {
 	// ClaimRepo persists pipeline.Outcome → claim_batch/claim_record.
 	// If nil, runs are not persisted (NoopClaimRepo is used).
 	ClaimRepo store.ClaimRepo
+	// HospitalRepo backs the /api/v1/master/hospitals admin endpoints.
+	// Nil = return 503 (admin CRUD requires a database).
+	HospitalRepo  store.HospitalRepo
+	DoctorRepo    store.DoctorRepo
+	InsclMapRepo  store.InsclMapRepo
+	DrugMapRepo   store.DrugMapRepo
+	DoctorMapRepo store.DoctorMapRepo
+	IcdMapRepo    store.IcdMapRepo
+	FieldMapRepo  store.FieldMapRepo
+	CCodeRepo     store.CCodeRepo
+	REPIngester   *store.REPIngester
+	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
+	Master validator.MasterValidator
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
 	StatusLookup interface {
 		GetStatus(txnID string) (*sender.SubmitResult, error)
@@ -77,6 +90,50 @@ func New(d Deps) *gin.Engine {
 	// IPD Share Folder ingestion
 	his.GET("/ipd/imports", listImportsHandler(d))
 	his.POST("/ipd/imports/:exportId", runImportHandler(d))
+
+	// Master data admin CRUD
+	master := r.Group("/api/v1/master")
+	master.GET("/hospitals", listHospitalsHandler(d))
+	master.POST("/hospitals", upsertHospitalHandler(d))
+	master.GET("/hospitals/:hcode", getHospitalHandler(d))
+	master.PATCH("/hospitals/:hcode", upsertHospitalHandler(d))
+	master.DELETE("/hospitals/:hcode", deleteHospitalHandler(d))
+
+	master.GET("/doctors", listDoctorsHandler(d))
+	master.POST("/doctors", upsertDoctorHandler(d))
+	master.GET("/doctors/:doctorId", getDoctorHandler(d))
+	master.PATCH("/doctors/:doctorId", upsertDoctorHandler(d))
+	master.DELETE("/doctors/:doctorId", deleteDoctorHandler(d))
+
+	master.GET("/inscl-maps", listInsclMapsHandler(d))
+	master.POST("/inscl-maps", upsertInsclMapHandler(d))
+	master.DELETE("/inscl-maps/:hcode/:hisPttype", deleteInsclMapHandler(d))
+
+	master.GET("/drug-maps", listDrugMapsHandler(d))
+	master.POST("/drug-maps", upsertDrugMapHandler(d))
+	master.POST("/drug-maps/bulk", bulkDrugMapsHandler(d))
+	master.DELETE("/drug-maps/:hcode/:hisDrugCode", deleteDrugMapHandler(d))
+
+	master.GET("/doctor-maps", listDoctorMapsHandler(d))
+	master.POST("/doctor-maps", upsertDoctorMapHandler(d))
+	master.POST("/doctor-maps/bulk", bulkDoctorMapsHandler(d))
+	master.DELETE("/doctor-maps/:hcode/:hisDoctorCode", deleteDoctorMapHandler(d))
+
+	master.GET("/icd-maps", listIcdMapsHandler(d))
+	master.POST("/icd-maps", upsertIcdMapHandler(d))
+	master.POST("/icd-maps/bulk", bulkIcdMapsHandler(d))
+	master.DELETE("/icd-maps/:hcode/:icdType/:hisIcdCode", deleteIcdMapHandler(d))
+
+	master.GET("/field-maps", listFieldMapsHandler(d))
+	master.POST("/field-maps", upsertFieldMapHandler(d))
+	master.POST("/field-maps/bulk", bulkFieldMapsHandler(d))
+	master.DELETE("/field-maps/:id", deleteFieldMapHandler(d))
+
+	// C-code (REP ingest + review)
+	claim := r.Group("/api/v1/claim")
+	claim.POST("/rep/:hcode/:period", fetchREPHandler(d))
+	r.GET("/api/v1/ccodes", listCCodesHandler(d))
+	r.PATCH("/api/v1/ccodes/:id/resolve", resolveCCodeHandler(d))
 
 	return r
 }
@@ -150,6 +207,7 @@ func submitHandler(d Deps) gin.HandlerFunc {
 			Extr:   d.Extractor,
 			FDH:    d.FDH,
 			CHI:    d.CHI,
+			Master: d.Master,
 		})
 		// We still return 200 + body when err != nil, because out can carry
 		// useful partial info (validation errors, per-submission errors).
@@ -347,6 +405,7 @@ func processBatchHandler(d Deps) gin.HandlerFunc {
 				Extr:   apiExtr,
 				FDH:    d.FDH,
 				CHI:    d.CHI,
+				Master: d.Master,
 			})
 			if !dryRun {
 				persistRun(ctx, d, b.HospitalCode, b.Period, out)
@@ -482,6 +541,7 @@ func runImportHandler(d Deps) gin.HandlerFunc {
 				Extr:   mem,
 				FDH:    d.FDH,
 				CHI:    d.CHI,
+				Master: d.Master,
 			})
 			if !dryRun {
 				persistRun(ctx, d, meta.HospitalCode, meta.Period, out)
@@ -577,6 +637,388 @@ func statusHandler(d Deps) gin.HandlerFunc {
 			"status":  res.Status,
 			"message": res.Message,
 		})
+	}
+}
+
+// ── /api/v1/master/hospitals ──
+
+func listHospitalsHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.HospitalRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hospital repo not configured"})
+			return
+		}
+		rows, err := d.HospitalRepo.List(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"hospitals": rows})
+	}
+}
+
+func getHospitalHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.HospitalRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hospital repo not configured"})
+			return
+		}
+		h, err := d.HospitalRepo.Get(c.Request.Context(), c.Param("hcode"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, h)
+	}
+}
+
+func upsertHospitalHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.HospitalRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hospital repo not configured"})
+			return
+		}
+		var body store.Hospital
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		// For PATCH /hospitals/:hcode, prefer path param over body.
+		if param := c.Param("hcode"); param != "" {
+			body.HCode = param
+		}
+		h, err := d.HospitalRepo.Upsert(c.Request.Context(), body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, h)
+	}
+}
+
+func deleteHospitalHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.HospitalRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hospital repo not configured"})
+			return
+		}
+		err := d.HospitalRepo.Delete(c.Request.Context(), c.Param("hcode"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
+// ── /api/v1/master/doctors ──
+
+func listDoctorsHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DoctorRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "doctor repo not configured"})
+			return
+		}
+		rows, err := d.DoctorRepo.List(c.Request.Context(), c.Query("hcode"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"doctors": rows})
+	}
+}
+
+func getDoctorHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DoctorRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "doctor repo not configured"})
+			return
+		}
+		doc, err := d.DoctorRepo.Get(c.Request.Context(), c.Param("doctorId"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, doc)
+	}
+}
+
+func upsertDoctorHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DoctorRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "doctor repo not configured"})
+			return
+		}
+		var body store.Doctor
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if p := c.Param("doctorId"); p != "" {
+			body.DoctorID = p
+		}
+		out, err := d.DoctorRepo.Upsert(c.Request.Context(), body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, out)
+	}
+}
+
+func deleteDoctorHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DoctorRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "doctor repo not configured"})
+			return
+		}
+		err := d.DoctorRepo.Delete(c.Request.Context(), c.Param("doctorId"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
+// ── /api/v1/master/inscl-maps ──
+
+func listInsclMapsHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.InsclMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "inscl-map repo not configured"})
+			return
+		}
+		rows, err := d.InsclMapRepo.List(c.Request.Context(), c.Query("hcode"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": rows})
+	}
+}
+
+func upsertInsclMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.InsclMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "inscl-map repo not configured"})
+			return
+		}
+		var body store.InsclMap
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		out, err := d.InsclMapRepo.Upsert(c.Request.Context(), body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, out)
+	}
+}
+
+func deleteInsclMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.InsclMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "inscl-map repo not configured"})
+			return
+		}
+		err := d.InsclMapRepo.Delete(c.Request.Context(), c.Param("hcode"), c.Param("hisPttype"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
+// ── /api/v1/master/drug-maps ──
+
+func listDrugMapsHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DrugMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "drug-map repo not configured"})
+			return
+		}
+		rows, err := d.DrugMapRepo.List(c.Request.Context(), c.Query("hcode"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": rows})
+	}
+}
+
+func upsertDrugMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DrugMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "drug-map repo not configured"})
+			return
+		}
+		var body store.DrugMap
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		out, err := d.DrugMapRepo.Upsert(c.Request.Context(), body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, out)
+	}
+}
+
+func deleteDrugMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DrugMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "drug-map repo not configured"})
+			return
+		}
+		err := d.DrugMapRepo.Delete(c.Request.Context(), c.Param("hcode"), c.Param("hisDrugCode"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
+// ── /api/v1/master/doctor-maps ──
+
+func listDoctorMapsHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DoctorMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "doctor-map repo not configured"})
+			return
+		}
+		rows, err := d.DoctorMapRepo.List(c.Request.Context(), c.Query("hcode"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": rows})
+	}
+}
+
+func upsertDoctorMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DoctorMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "doctor-map repo not configured"})
+			return
+		}
+		var body store.DoctorMap
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		out, err := d.DoctorMapRepo.Upsert(c.Request.Context(), body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, out)
+	}
+}
+
+func deleteDoctorMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.DoctorMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "doctor-map repo not configured"})
+			return
+		}
+		err := d.DoctorMapRepo.Delete(c.Request.Context(), c.Param("hcode"), c.Param("hisDoctorCode"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
+// ── /api/v1/master/icd-maps ──
+
+func listIcdMapsHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.IcdMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "icd-map repo not configured"})
+			return
+		}
+		rows, err := d.IcdMapRepo.List(c.Request.Context(), c.Query("hcode"), c.Query("type"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": rows})
+	}
+}
+
+func upsertIcdMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.IcdMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "icd-map repo not configured"})
+			return
+		}
+		var body store.IcdMap
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		out, err := d.IcdMapRepo.Upsert(c.Request.Context(), body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, out)
+	}
+}
+
+func deleteIcdMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.IcdMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "icd-map repo not configured"})
+			return
+		}
+		err := d.IcdMapRepo.Delete(c.Request.Context(),
+			c.Param("hcode"), c.Param("hisIcdCode"), c.Param("icdType"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
 	}
 }
 

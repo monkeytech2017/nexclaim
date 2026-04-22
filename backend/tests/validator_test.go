@@ -57,7 +57,7 @@ func TestValidateOPD_UCSOk(t *testing.T) {
 		},
 		UUC: "1",
 	}
-	if errs := validator.ValidateOPD(v); len(errs) > 0 {
+	if errs := validator.ValidateOPD(v, validator.NoopMaster{}); len(errs) > 0 {
 		t.Errorf("expected no errors, got %v", errs)
 	}
 }
@@ -71,7 +71,7 @@ func TestValidateOPD_CSMBSRequiresPermit(t *testing.T) {
 		},
 		UUC: "1",
 	}
-	errs := validator.ValidateOPD(v)
+	errs := validator.ValidateOPD(v, validator.NoopMaster{})
 	if len(errs) == 0 {
 		t.Fatal("expected PERMITNO error for CSMBS OPD")
 	}
@@ -86,7 +86,7 @@ func TestValidateIPD_CSMBSRequiresCHAandDRG(t *testing.T) {
 		AN:      "123456789",
 		UUC:     "1",
 	}
-	errs := validator.ValidateIPD(a)
+	errs := validator.ValidateIPD(a, validator.NoopMaster{})
 	hasCHA, hasDRG := false, false
 	for _, e := range errs {
 		if e.Field == "CHA" {

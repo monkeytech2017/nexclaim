@@ -197,6 +197,246 @@ export const ipdApi = {
     ),
 }
 
+// ── Master data: Hospitals ──
+
+export interface Hospital {
+  hcode:       string
+  name_th:     string
+  changwat?:   string
+  amphur?:     string
+  his_db_key?: string
+  is_active:   boolean
+  created_at?: string
+}
+
+export const hospitalsApi = {
+  list:   () => request<{ hospitals: Hospital[] }>('/api/v1/master/hospitals'),
+  get:    (hcode: string) => request<Hospital>(`/api/v1/master/hospitals/${encodeURIComponent(hcode)}`),
+  create: (h: Hospital) =>
+    request<Hospital>('/api/v1/master/hospitals', {
+      method: 'POST',
+      body: JSON.stringify(h),
+    }),
+  update: (hcode: string, h: Partial<Hospital>) =>
+    request<Hospital>(`/api/v1/master/hospitals/${encodeURIComponent(hcode)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...h, hcode }),
+    }),
+  delete: (hcode: string) =>
+    request<void>(`/api/v1/master/hospitals/${encodeURIComponent(hcode)}`, { method: 'DELETE' }),
+}
+
+// ── Master data: Doctors ──
+
+export interface Doctor {
+  doctor_id:  string
+  hcode:      string
+  license_no: string
+  name_th?:   string
+  specialty?: string
+  is_active:  boolean
+  updated_at?: string
+}
+
+export const doctorsApi = {
+  list:   (hcode?: string) =>
+    request<{ doctors: Doctor[] }>(`/api/v1/master/doctors${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
+  get:    (id: string) => request<Doctor>(`/api/v1/master/doctors/${encodeURIComponent(id)}`),
+  create: (d: Doctor) =>
+    request<Doctor>('/api/v1/master/doctors', { method: 'POST', body: JSON.stringify(d) }),
+  update: (id: string, d: Partial<Doctor>) =>
+    request<Doctor>(`/api/v1/master/doctors/${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify({ ...d, doctor_id: id }),
+    }),
+  delete: (id: string) =>
+    request<void>(`/api/v1/master/doctors/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+}
+
+// ── Master data: INSCL mapping (per hospital) ──
+
+export interface InsclMap {
+  hcode:        string
+  his_pttype:   string
+  inscl:        string
+  agency_code?: string
+  note?:        string
+}
+
+export const insclMapsApi = {
+  list:   (hcode?: string) =>
+    request<{ items: InsclMap[] }>(`/api/v1/master/inscl-maps${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
+  upsert: (m: InsclMap) =>
+    request<InsclMap>('/api/v1/master/inscl-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (hcode: string, hisPttype: string) =>
+    request<void>(`/api/v1/master/inscl-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(hisPttype)}`,
+      { method: 'DELETE' }),
+}
+
+// ── Master data: HIS drug mapping ──
+
+export interface DrugMap {
+  id?:            string
+  hcode:          string
+  his_drug_code:  string
+  tmt_code?:      string
+  his_drug_name?: string
+  note?:          string
+  is_active:      boolean
+}
+
+export interface BulkResult {
+  total:    number
+  imported: number
+  errors?:  Array<{ row: number; key?: string; reason: string }>
+}
+
+export const drugMapsApi = {
+  list:   (hcode?: string) =>
+    request<{ items: DrugMap[] }>(`/api/v1/master/drug-maps${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
+  upsert: (m: DrugMap) =>
+    request<DrugMap>('/api/v1/master/drug-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (hcode: string, hisDrugCode: string) =>
+    request<void>(`/api/v1/master/drug-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(hisDrugCode)}`,
+      { method: 'DELETE' }),
+  bulk:   (items: DrugMap[]) =>
+    request<BulkResult>('/api/v1/master/drug-maps/bulk', {
+      method: 'POST', body: JSON.stringify({ items }),
+    }),
+}
+
+// ── Master data: HIS doctor mapping ──
+
+export interface DoctorMap {
+  hcode:            string
+  his_doctor_code:  string
+  doctor_id?:       string
+}
+
+export const doctorMapsApi = {
+  list:   (hcode?: string) =>
+    request<{ items: DoctorMap[] }>(`/api/v1/master/doctor-maps${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
+  upsert: (m: DoctorMap) =>
+    request<DoctorMap>('/api/v1/master/doctor-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (hcode: string, hisDoctorCode: string) =>
+    request<void>(`/api/v1/master/doctor-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(hisDoctorCode)}`,
+      { method: 'DELETE' }),
+  bulk:   (items: DoctorMap[]) =>
+    request<BulkResult>('/api/v1/master/doctor-maps/bulk', {
+      method: 'POST', body: JSON.stringify({ items }),
+    }),
+}
+
+// ── Master data: HIS ICD mapping ──
+
+export type IcdType = '10' | '9C'
+
+export interface IcdMap {
+  hcode:        string
+  his_icd_code: string
+  icd_type:     IcdType
+  std_code:     string
+}
+
+export const icdMapsApi = {
+  list: (hcode?: string, type?: IcdType) => {
+    const qs = new URLSearchParams()
+    if (hcode) qs.set('hcode', hcode)
+    if (type)  qs.set('type', type)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: IcdMap[] }>(`/api/v1/master/icd-maps${suffix}`)
+  },
+  upsert: (m: IcdMap) =>
+    request<IcdMap>('/api/v1/master/icd-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (hcode: string, icdType: IcdType, hisIcdCode: string) =>
+    request<void>(
+      `/api/v1/master/icd-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(icdType)}/${encodeURIComponent(hisIcdCode)}`,
+      { method: 'DELETE' }),
+  bulk:   (items: IcdMap[]) =>
+    request<BulkResult>('/api/v1/master/icd-maps/bulk', {
+      method: 'POST', body: JSON.stringify({ items }),
+    }),
+}
+
+// ── Master data: HIS field mapping (column → target spec) ──
+
+export interface FieldMap {
+  id?:            string
+  hcode:          string
+  his_table:      string
+  his_column:     string
+  target_file:    string
+  target_field:   string
+  transform?:     string
+  is_required:    boolean
+  default_value?: string
+  note?:          string
+}
+
+export const fieldMapsApi = {
+  list: (filter: { hcode?: string; his_table?: string; target_file?: string }) => {
+    const qs = new URLSearchParams()
+    if (filter.hcode)       qs.set('hcode', filter.hcode)
+    if (filter.his_table)   qs.set('his_table', filter.his_table)
+    if (filter.target_file) qs.set('target_file', filter.target_file)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: FieldMap[] }>(`/api/v1/master/field-maps${suffix}`)
+  },
+  upsert: (m: FieldMap) =>
+    request<FieldMap>('/api/v1/master/field-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (id: string) =>
+    request<void>(`/api/v1/master/field-maps/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  bulk:   (items: FieldMap[]) =>
+    request<BulkResult>('/api/v1/master/field-maps/bulk', {
+      method: 'POST', body: JSON.stringify({ items }),
+    }),
+}
+
+// ── C-code (REP feedback) ──
+
+export interface CCode {
+  id:           string
+  batch_id:     string
+  record_id?:   string
+  hn?:          string
+  an_or_seq?:   string
+  c_code:       string
+  c_desc?:      string
+  field_name?:  string
+  field_value?: string
+  resolved:     boolean
+  resolved_by?: string
+  resolved_at?: string
+  received_at:  string
+}
+
+export interface IngestResult {
+  fetched:  number
+  inserted: number
+  skipped:  number
+  errors:   number
+}
+
+export const ccodesApi = {
+  list: (filter: { batch_id?: string; hcode?: string; period?: string; resolved?: boolean; c_code?: string }) => {
+    const qs = new URLSearchParams()
+    if (filter.batch_id) qs.set('batch_id', filter.batch_id)
+    if (filter.hcode)    qs.set('hcode', filter.hcode)
+    if (filter.period)   qs.set('period', filter.period)
+    if (filter.c_code)   qs.set('c_code', filter.c_code)
+    if (filter.resolved !== undefined) qs.set('resolved', String(filter.resolved))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: CCode[] }>(`/api/v1/ccodes${suffix}`)
+  },
+  resolve: (id: string, resolvedBy: string) =>
+    request<void>(`/api/v1/ccodes/${encodeURIComponent(id)}/resolve`, {
+      method: 'PATCH', body: JSON.stringify({ resolved_by: resolvedBy }),
+    }),
+  fetchRep: (hcode: string, period: string) =>
+    request<IngestResult>(
+      `/api/v1/claim/rep/${encodeURIComponent(hcode)}/${encodeURIComponent(period)}`,
+      { method: 'POST' }),
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {
