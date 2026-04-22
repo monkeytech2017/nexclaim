@@ -357,6 +357,52 @@ export const icdMapsApi = {
     }),
 }
 
+// ── C-code (REP feedback) ──
+
+export interface CCode {
+  id:           string
+  batch_id:     string
+  record_id?:   string
+  hn?:          string
+  an_or_seq?:   string
+  c_code:       string
+  c_desc?:      string
+  field_name?:  string
+  field_value?: string
+  resolved:     boolean
+  resolved_by?: string
+  resolved_at?: string
+  received_at:  string
+}
+
+export interface IngestResult {
+  fetched:  number
+  inserted: number
+  skipped:  number
+  errors:   number
+}
+
+export const ccodesApi = {
+  list: (filter: { batch_id?: string; hcode?: string; period?: string; resolved?: boolean; c_code?: string }) => {
+    const qs = new URLSearchParams()
+    if (filter.batch_id) qs.set('batch_id', filter.batch_id)
+    if (filter.hcode)    qs.set('hcode', filter.hcode)
+    if (filter.period)   qs.set('period', filter.period)
+    if (filter.c_code)   qs.set('c_code', filter.c_code)
+    if (filter.resolved !== undefined) qs.set('resolved', String(filter.resolved))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: CCode[] }>(`/api/v1/ccodes${suffix}`)
+  },
+  resolve: (id: string, resolvedBy: string) =>
+    request<void>(`/api/v1/ccodes/${encodeURIComponent(id)}/resolve`, {
+      method: 'PATCH', body: JSON.stringify({ resolved_by: resolvedBy }),
+    }),
+  fetchRep: (hcode: string, period: string) =>
+    request<IngestResult>(
+      `/api/v1/claim/rep/${encodeURIComponent(hcode)}/${encodeURIComponent(period)}`,
+      { method: 'POST' }),
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {

@@ -13,6 +13,7 @@ import {
   Pill,
   UserCog,
   FileCode2,
+  AlertCircle,
 } from 'lucide-react'
 
 const sections = [
@@ -24,6 +25,7 @@ const sections = [
       { href: '/ipd-imports', label: 'IPD Imports',  icon: FolderDown, hint: 'Share folder' },
       { href: '/claims',      label: 'ส่ง Claim',    icon: Send, hint: 'Dev/admin' },
       { href: '/history',     label: 'ประวัติการส่ง', icon: History },
+      { href: '/c-codes',     label: 'C-code',       icon: AlertCircle, hint: 'REP feedback' },
     ],
   },
   {

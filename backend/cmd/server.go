@@ -66,6 +66,8 @@ func runServer(args []string) {
 	var drugMapRepo store.DrugMapRepo
 	var doctorMapRepo store.DoctorMapRepo
 	var icdMapRepo store.IcdMapRepo
+	var ccodeRepo store.CCodeRepo
+	var repIngester *store.REPIngester
 	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
@@ -79,6 +81,8 @@ func runServer(args []string) {
 			drugMapRepo = store.NewPgDrugMapRepo(pg)
 			doctorMapRepo = store.NewPgDoctorMapRepo(pg)
 			icdMapRepo = store.NewPgIcdMapRepo(pg)
+			ccodeRepo = store.NewPgCCodeRepo(pg)
+			repIngester = store.NewREPIngester(pg, ccodeRepo, fdh)
 
 			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
 				fmt.Fprintf(os.Stderr, "[NexClaim] master validator load failed, falling back to noop: %v\n", err)
@@ -107,6 +111,8 @@ func runServer(args []string) {
 		DrugMapRepo:   drugMapRepo,
 		DoctorMapRepo: doctorMapRepo,
 		IcdMapRepo:    icdMapRepo,
+		CCodeRepo:     ccodeRepo,
+		REPIngester:   repIngester,
 		Master:        master,
 		StatusLookup:  fdh,
 	})

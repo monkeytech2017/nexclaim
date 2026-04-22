@@ -54,6 +54,8 @@ type Deps struct {
 	DrugMapRepo   store.DrugMapRepo
 	DoctorMapRepo store.DoctorMapRepo
 	IcdMapRepo    store.IcdMapRepo
+	CCodeRepo     store.CCodeRepo
+	REPIngester   *store.REPIngester
 	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
 	Master validator.MasterValidator
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
@@ -120,6 +122,12 @@ func New(d Deps) *gin.Engine {
 	master.POST("/icd-maps", upsertIcdMapHandler(d))
 	master.POST("/icd-maps/bulk", bulkIcdMapsHandler(d))
 	master.DELETE("/icd-maps/:hcode/:icdType/:hisIcdCode", deleteIcdMapHandler(d))
+
+	// C-code (REP ingest + review)
+	claim := r.Group("/api/v1/claim")
+	claim.POST("/rep/:hcode/:period", fetchREPHandler(d))
+	r.GET("/api/v1/ccodes", listCCodesHandler(d))
+	r.PATCH("/api/v1/ccodes/:id/resolve", resolveCCodeHandler(d))
 
 	return r
 }
