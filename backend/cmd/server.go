@@ -11,6 +11,7 @@ import (
 
 	"github.com/nexclaim/nexclaim/internal/batch"
 	"github.com/nexclaim/nexclaim/internal/config"
+	"github.com/nexclaim/nexclaim/internal/db"
 	"github.com/nexclaim/nexclaim/internal/extractor"
 	"github.com/nexclaim/nexclaim/internal/hisclient"
 	"github.com/nexclaim/nexclaim/internal/sender"
@@ -52,7 +53,17 @@ func runServer(args []string) {
 		}
 		hisCli = hisclient.New(hisURL, opts...)
 	}
-	batches := batch.New()
+	// Batch store: DB-backed ถ้า config มี DB_USER (Postgres reachable),
+	// ไม่เช่นนั้น fallback เป็น in-memory (useful สำหรับ dev/test without DB).
+	var batches batch.Store = batch.NewMemory()
+	if cfg.DBUser != "" {
+		if pg, err := db.Open(cfg.DSN()); err != nil {
+			fmt.Fprintf(os.Stderr, "[NexClaim] DB connect failed, using in-memory store: %v\n", err)
+		} else {
+			batches = batch.NewPostgres(pg)
+			fmt.Printf("[NexClaim] batch store: postgres (%s/%s)\n", cfg.DBHost, cfg.DBName)
+		}
+	}
 
 	ipdShareRoot := os.Getenv("IPD_SHARE_ROOT") // เช่น /shared/nexclaim/ipd
 

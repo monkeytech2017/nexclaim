@@ -75,7 +75,10 @@ nexconnect/
 │   │   │   ├── csv.go                    ← pipe-delimited UTF-8 reader
 │   │   │   ├── parse.go                  ← 10 row types + per-file parsers
 │   │   │   └── assemble.go               ← join rows → []model.IPDAdmit
-│   │   ├── batch/store.go                ← in-memory batch store (OPD 2-way)
+│   │   ├── batch/                        ← OPD ingest batch (interface + Memory/Pg impls)
+│   │   │   ├── store.go                  ← Store interface + MemoryStore + New helpers
+│   │   │   └── pg_store.go               ← Postgres-backed impl (opd_ingest_batch/_visit)
+│   │   ├── db/db.go                      ← sqlx connection pool (lib/pq driver)
 │   │   ├── generator/
 │   │   │   ├── file16/ (file16.go + records.go)  ← 16 แฟ้ม pipe-delimited
 │   │   │   ├── cipn/cipn.go              ← XML CIPN (IPD ข้าราชการ/อปท./OFC)
@@ -87,7 +90,9 @@ nexconnect/
 │   │   ├── response/                     ← ack.go, ccode.go
 │   │   ├── server/server.go              ← gin HTTP router + handlers
 │   │   └── util/                         ← date.go, str.go
-│   ├── migrations/                       ← 001_master_data, 002_his_mapping, 003_transactions
+│   ├── migrations/                       ← 000_create_database (th_TH.UTF-8), 001_master_data,
+│   │                                        002_his_mapping, 003_transactions, 004_ingest_batch
+│   ├── scripts/init_db.sh                ← wrapper: check locale + create DB + apply migrations
 │   ├── data/                             ← icd10.json, icd9cm.json, tmt.json, chrgitem.json
 │   └── tests/                            ← *_test.go (88 tests: router, pipeline, file16, cipn, csop,
 │                                             aipn, ssop, hisclient, sharefile, server, ipd_import, ...)
@@ -531,12 +536,17 @@ LOG_LEVEL=info
 git clone https://github.com/monkeytech2017/nexclaim   # repo = monorepo (backend + frontend)
 cd nexclaim
 
-# ── Backend ──
+# ── Database (ครั้งแรกเท่านั้น) ──
+# สร้าง DB nexclaim พร้อม th_TH.UTF-8 collation + apply migrations 000..004
 cd backend
+PGHOST=localhost PGUSER=postgres ./scripts/init_db.sh
+
+# ── Backend ──
 cp ../.env.example .env     # แก้ credentials
 go mod tidy
 go build -o nexclaim .
-go test ./...               # ต้องผ่านก่อน commit — ปัจจุบัน 88/88
+go test ./...               # ต้องผ่านก่อน commit — ปัจจุบัน 90/90 (1 PgStore skip ถ้าไม่ตั้ง DSN)
+POSTGRES_TEST_DSN="postgres://user:pass@localhost/nexclaim?sslmode=disable" go test ./tests/... # รวม PgStore contract
 
 # CLI
 ./nexclaim submit --inscl UCS --period 202504 --dry-run --hcode 12345

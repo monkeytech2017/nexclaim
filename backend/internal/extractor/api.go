@@ -19,12 +19,12 @@ import (
 //
 // IPD ยังไม่รองรับผ่าน API (ใช้ share-file แทน — Slice B).
 type APIExtractor struct {
-	Store   *batch.Store
+	Store   batch.Store
 	Client  *hisclient.Client
 	BatchID string
 }
 
-func NewAPIExtractor(store *batch.Store, client *hisclient.Client, batchID string) *APIExtractor {
+func NewAPIExtractor(store batch.Store, client *hisclient.Client, batchID string) *APIExtractor {
 	return &APIExtractor{Store: store, Client: client, BatchID: batchID}
 }
 

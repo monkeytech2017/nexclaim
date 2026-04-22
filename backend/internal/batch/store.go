@@ -1,9 +1,10 @@
-// Package batch เก็บ VisitSummary ที่ HIS push เข้ามาก่อนที่ NexClaim
-// จะไปดึง detail + ประมวลผล pipeline.
+// Package batch เก็บ OPD ingest batches ที่ HIS push เข้ามาก่อน pipeline ทำงาน.
 //
-// Implementation ตอนนี้ = in-memory (map ใน process). รองรับ single-instance
-// server. สำหรับ multi-instance ให้สลับเป็น Redis/Postgres store ที่มี
-// interface เดียวกัน.
+// Store มีสอง implementation:
+//   - MemoryStore  — in-process map (dev/test, หายเมื่อ restart)
+//   - PgStore      — Postgres-backed (prod, survive restart)
+//
+// pipeline ใช้ interface Store — ไม่ต้องรู้ว่าอยู่ใน backend ไหน.
 package batch
 
 import (
@@ -26,58 +27,58 @@ const (
 	StateFailed    State = "FAILED"
 )
 
-// Batch หนึ่ง batch = หนึ่ง push จาก HIS (hospital_code + period + visits).
+// Batch = หนึ่ง push จาก HIS (hospital_code + period + visits).
 type Batch struct {
-	ID           string                   `json:"batch_id"`
-	HospitalCode string                   `json:"hospital_code"`
-	Period       string                   `json:"period"`
-	ExportedBy   string                   `json:"exported_by,omitempty"`
-	State        State                    `json:"state"`
-	CreatedAt    time.Time                `json:"created_at"`
-	UpdatedAt    time.Time                `json:"updated_at"`
+	ID           string                   `json:"batch_id"           db:"batch_id"`
+	HospitalCode string                   `json:"hospital_code"      db:"hcode"`
+	Period       string                   `json:"period"             db:"period"`
+	ExportedBy   string                   `json:"exported_by,omitempty" db:"exported_by"`
+	State        State                    `json:"state"              db:"state"`
+	CreatedAt    time.Time                `json:"created_at"         db:"created_at"`
+	UpdatedAt    time.Time                `json:"updated_at"         db:"updated_at"`
 	Visits       []hisclient.VisitSummary `json:"visits"`
-	// Optional: ผลลัพธ์หลัง process (เก็บไว้ให้ client poll status)
-	LastError string `json:"last_error,omitempty"`
+	LastError    string                   `json:"last_error,omitempty" db:"last_error"`
 }
 
-// Store = in-memory batch repository.
-type Store struct {
+// Store abstracts batch persistence. MemoryStore/PgStore implement it.
+type Store interface {
+	Put(req hisclient.VisitListRequest) *Batch
+	Get(id string) (*Batch, bool)
+	SetState(id string, state State, errMsg string) error
+	List() []*Batch
+}
+
+// New returns a default MemoryStore. Prefer NewMemory/NewPostgres for clarity.
+func New() Store { return NewMemory() }
+
+// NewMemory constructs an in-process, thread-safe store.
+func NewMemory() *MemoryStore {
+	return &MemoryStore{batches: make(map[string]*Batch)}
+}
+
+// ── MemoryStore ───────────────────────────────────────────────
+
+type MemoryStore struct {
 	mu      sync.RWMutex
 	batches map[string]*Batch
 }
 
-func New() *Store {
-	return &Store{batches: make(map[string]*Batch)}
-}
-
-// Put เก็บ batch ใหม่ + generate batchId. ส่งกลับ ID.
-func (s *Store) Put(req hisclient.VisitListRequest) *Batch {
-	b := &Batch{
-		ID:           "BATCH-" + time.Now().Format("20060102") + "-" + shortUUID(),
-		HospitalCode: req.HospitalCode,
-		Period:       req.Period,
-		ExportedBy:   req.ExportedBy,
-		State:        StateReceived,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-		Visits:       req.Visits,
-	}
+func (s *MemoryStore) Put(req hisclient.VisitListRequest) *Batch {
+	b := newBatch(req)
 	s.mu.Lock()
 	s.batches[b.ID] = b
 	s.mu.Unlock()
 	return b
 }
 
-// Get อ่าน batch ตาม ID.
-func (s *Store) Get(id string) (*Batch, bool) {
+func (s *MemoryStore) Get(id string) (*Batch, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	b, ok := s.batches[id]
 	return b, ok
 }
 
-// SetState update state + optional error message.
-func (s *Store) SetState(id string, state State, errMsg string) error {
+func (s *MemoryStore) SetState(id string, state State, errMsg string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	b, ok := s.batches[id]
@@ -90,8 +91,7 @@ func (s *Store) SetState(id string, state State, errMsg string) error {
 	return nil
 }
 
-// List คืน batch ทั้งหมด (sorted by CreatedAt asc). ใช้สำหรับ admin/dashboard.
-func (s *Store) List() []*Batch {
+func (s *MemoryStore) List() []*Batch {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*Batch, 0, len(s.batches))
@@ -99,6 +99,22 @@ func (s *Store) List() []*Batch {
 		out = append(out, b)
 	}
 	return out
+}
+
+// ── Shared helpers ────────────────────────────────────────────
+
+func newBatch(req hisclient.VisitListRequest) *Batch {
+	now := time.Now()
+	return &Batch{
+		ID:           "BATCH-" + now.Format("20060102") + "-" + shortUUID(),
+		HospitalCode: req.HospitalCode,
+		Period:       req.Period,
+		ExportedBy:   req.ExportedBy,
+		State:        StateReceived,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		Visits:       req.Visits,
+	}
 }
 
 func shortUUID() string {

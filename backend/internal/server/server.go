@@ -37,7 +37,7 @@ type Deps struct {
 	// HIS client + batch store เปิดใช้ endpoint /api/v1/his/opd/*
 	// ถ้า nil → endpoint คืน 503
 	HISClient *hisclient.Client
-	Batches   *batch.Store
+	Batches   batch.Store
 	// IPDShareRoot = root ของ /shared/nexclaim/ipd/ (ต้องมี subdirs:
 	// incoming/, processed/, error/). ถ้าว่าง → endpoint /api/v1/his/ipd/*
 	// คืน 503.
@@ -361,7 +361,7 @@ func processBatchHandler(d Deps) gin.HandlerFunc {
 // subBatch creates a view over an existing batch that contains only a subset
 // of its visits, under a new deterministic ID. Returns the sub-batch ID.
 // Used so we can run pipeline.Run per INSCL bucket without mutating the parent batch.
-func subBatch(store *batch.Store, parentID string, vns []string) string {
+func subBatch(store batch.Store, parentID string, vns []string) string {
 	parent, ok := store.Get(parentID)
 	if !ok {
 		return ""
