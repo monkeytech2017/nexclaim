@@ -1,0 +1,12 @@
+[
+  { "code": "A00.0", "name_en": "Cholera due to Vibrio cholerae 01, biovar cholerae", "name_th": "อหิวาตกโรคจากเชื้อไวบริโอโคเลอเรชนิด O1 ไบโอวาร์โคเลอเร", "chapter": "I" },
+  { "code": "I10",   "name_en": "Essential (primary) hypertension", "name_th": "ความดันโลหิตสูงชนิดไม่ทราบสาเหตุ", "chapter": "IX" },
+  { "code": "E11.9", "name_en": "Type 2 diabetes mellitus without complications", "name_th": "เบาหวานชนิดที่ 2 ไม่มีภาวะแทรกซ้อน", "chapter": "IV" },
+  { "code": "J06.9", "name_en": "Acute upper respiratory infection, unspecified", "name_th": "การติดเชื้อของทางเดินหายใจส่วนบนชนิดเฉียบพลัน ไม่ระบุรายละเอียด", "chapter": "X" },
+  { "code": "J18.9", "name_en": "Pneumonia, unspecified organism", "name_th": "ปอดบวม ไม่ระบุเชื้อ", "chapter": "X" },
+  { "code": "K35.8", "name_en": "Acute appendicitis, other and unspecified", "name_th": "ไส้ติ่งอักเสบเฉียบพลัน อื่นๆ และไม่ระบุรายละเอียด", "chapter": "XI" },
+  { "code": "K65.0", "name_en": "Acute peritonitis", "name_th": "เยื่อบุช่องท้องอักเสบเฉียบพลัน", "chapter": "XI" },
+  { "code": "O80.0", "name_en": "Spontaneous vertex delivery", "name_th": "การคลอดเอง โดยศีรษะเด็กออกก่อน", "chapter": "XV" },
+  { "code": "S52.5", "name_en": "Fracture of lower end of radius", "name_th": "กระดูกเรเดียสส่วนปลายแตกหัก", "chapter": "XIX" },
+  { "code": "S72.0", "name_en": "Fracture of neck of femur", "name_th": "กระดูกคอฟีเมอร์แตกหัก", "chapter": "XIX" }
+]

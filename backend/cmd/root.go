@@ -29,6 +29,8 @@ func Execute() {
 		runServer(os.Args[2:])
 	case "migrate":
 		runMigrate(os.Args[2:])
+	case "seed":
+		runSeed(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
 	default:
@@ -46,6 +48,7 @@ func printUsage() {
 	fmt.Println("  nexclaim status  --txn-id <id>")
 	fmt.Println("  nexclaim server  [--addr :8080]")
 	fmt.Println("  nexclaim migrate status")
+	fmt.Println("  nexclaim seed master [--dir data/]")
 }
 
 func runStatus(args []string) {

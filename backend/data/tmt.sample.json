@@ -1,0 +1,12 @@
+[
+  { "tmt_code": "100012300101010100000100", "name_th": "Paracetamol 500mg tablet",         "generic_name": "PARACETAMOL",       "strength": "500 mg",   "dosage_form": "tablet",               "unit": "TAB" },
+  { "tmt_code": "100045600201010100000120", "name_th": "Amoxicillin 500mg capsule",        "generic_name": "AMOXICILLIN",       "strength": "500 mg",   "dosage_form": "capsule",              "unit": "CAP" },
+  { "tmt_code": "100234500301010100000422", "name_th": "Diclofenac 25mg tablet",           "generic_name": "DICLOFENAC",        "strength": "25 mg",    "dosage_form": "tablet",               "unit": "TAB" },
+  { "tmt_code": "100345600401020100000515", "name_th": "Metronidazole 500mg injection",    "generic_name": "METRONIDAZOLE",     "strength": "500 mg",   "dosage_form": "injection",            "unit": "BAG" },
+  { "tmt_code": "100452100101010100000612", "name_th": "Amlodipine 5mg tablet",            "generic_name": "AMLODIPINE",        "strength": "5 mg",     "dosage_form": "film-coated tablet",   "unit": "TAB" },
+  { "tmt_code": "100567800501020100000710", "name_th": "Ceftriaxone 1g injection",         "generic_name": "CEFTRIAXONE",       "strength": "1 g",      "dosage_form": "powder for injection", "unit": "VIAL" },
+  { "tmt_code": "100673400201010100000815", "name_th": "Metformin 500mg tablet",           "generic_name": "METFORMIN",         "strength": "500 mg",   "dosage_form": "tablet",               "unit": "TAB" },
+  { "tmt_code": "100789001301010100000905", "name_th": "Oxytocin 10U injection",           "generic_name": "OXYTOCIN",          "strength": "10 units", "dosage_form": "injection",            "unit": "AMP" },
+  { "tmt_code": "100890100601020100001001", "name_th": "Morphine 10mg injection",          "generic_name": "MORPHINE",          "strength": "10 mg",    "dosage_form": "injection",            "unit": "AMP" },
+  { "tmt_code": "101000100701030100001100", "name_th": "Losartan 50mg tablet",             "generic_name": "LOSARTAN",          "strength": "50 mg",    "dosage_form": "film-coated tablet",   "unit": "TAB" }
+]
