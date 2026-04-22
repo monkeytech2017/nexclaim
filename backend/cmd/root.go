@@ -27,6 +27,8 @@ func Execute() {
 		runStatus(os.Args[2:])
 	case "server":
 		runServer(os.Args[2:])
+	case "migrate":
+		runMigrate(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
 	default:
@@ -42,7 +44,8 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  nexclaim submit  --inscl <INSCL> --period <YYYYMM> [--dry-run] [--hcode <code>] [--agency <code>]")
 	fmt.Println("  nexclaim status  --txn-id <id>")
-	fmt.Println("  nexclaim server")
+	fmt.Println("  nexclaim server  [--addr :8080]")
+	fmt.Println("  nexclaim migrate status")
 }
 
 func runStatus(args []string) {
