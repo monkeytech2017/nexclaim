@@ -16,6 +16,7 @@ const titles: Record<string, string> = {
   '/admin/drug-maps':   'Drug Mapping (HIS Drug → TMT24)',
   '/admin/doctor-maps': 'Doctor Mapping (HIS Doctor → DRDX)',
   '/admin/icd-maps':    'ICD Mapping (HIS ICD → ICD-10/9CM)',
+  '/admin/field-maps':  'Field Mapping (HIS column → target spec)',
 }
 
 function titleFor(pathname: string): string {

@@ -66,6 +66,7 @@ func runServer(args []string) {
 	var drugMapRepo store.DrugMapRepo
 	var doctorMapRepo store.DoctorMapRepo
 	var icdMapRepo store.IcdMapRepo
+	var fieldMapRepo store.FieldMapRepo
 	var ccodeRepo store.CCodeRepo
 	var repIngester *store.REPIngester
 	var master validator.MasterValidator = validator.NoopMaster{}
@@ -81,6 +82,7 @@ func runServer(args []string) {
 			drugMapRepo = store.NewPgDrugMapRepo(pg)
 			doctorMapRepo = store.NewPgDoctorMapRepo(pg)
 			icdMapRepo = store.NewPgIcdMapRepo(pg)
+			fieldMapRepo = store.NewPgFieldMapRepo(pg)
 			ccodeRepo = store.NewPgCCodeRepo(pg)
 			repIngester = store.NewREPIngester(pg, ccodeRepo, fdh)
 
@@ -111,6 +113,7 @@ func runServer(args []string) {
 		DrugMapRepo:   drugMapRepo,
 		DoctorMapRepo: doctorMapRepo,
 		IcdMapRepo:    icdMapRepo,
+		FieldMapRepo:  fieldMapRepo,
 		CCodeRepo:     ccodeRepo,
 		REPIngester:   repIngester,
 		Master:        master,

@@ -357,6 +357,40 @@ export const icdMapsApi = {
     }),
 }
 
+// ── Master data: HIS field mapping (column → target spec) ──
+
+export interface FieldMap {
+  id?:            string
+  hcode:          string
+  his_table:      string
+  his_column:     string
+  target_file:    string
+  target_field:   string
+  transform?:     string
+  is_required:    boolean
+  default_value?: string
+  note?:          string
+}
+
+export const fieldMapsApi = {
+  list: (filter: { hcode?: string; his_table?: string; target_file?: string }) => {
+    const qs = new URLSearchParams()
+    if (filter.hcode)       qs.set('hcode', filter.hcode)
+    if (filter.his_table)   qs.set('his_table', filter.his_table)
+    if (filter.target_file) qs.set('target_file', filter.target_file)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: FieldMap[] }>(`/api/v1/master/field-maps${suffix}`)
+  },
+  upsert: (m: FieldMap) =>
+    request<FieldMap>('/api/v1/master/field-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (id: string) =>
+    request<void>(`/api/v1/master/field-maps/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  bulk:   (items: FieldMap[]) =>
+    request<BulkResult>('/api/v1/master/field-maps/bulk', {
+      method: 'POST', body: JSON.stringify({ items }),
+    }),
+}
+
 // ── C-code (REP feedback) ──
 
 export interface CCode {

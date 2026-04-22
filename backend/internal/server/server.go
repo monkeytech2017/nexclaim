@@ -54,6 +54,7 @@ type Deps struct {
 	DrugMapRepo   store.DrugMapRepo
 	DoctorMapRepo store.DoctorMapRepo
 	IcdMapRepo    store.IcdMapRepo
+	FieldMapRepo  store.FieldMapRepo
 	CCodeRepo     store.CCodeRepo
 	REPIngester   *store.REPIngester
 	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
@@ -122,6 +123,11 @@ func New(d Deps) *gin.Engine {
 	master.POST("/icd-maps", upsertIcdMapHandler(d))
 	master.POST("/icd-maps/bulk", bulkIcdMapsHandler(d))
 	master.DELETE("/icd-maps/:hcode/:icdType/:hisIcdCode", deleteIcdMapHandler(d))
+
+	master.GET("/field-maps", listFieldMapsHandler(d))
+	master.POST("/field-maps", upsertFieldMapHandler(d))
+	master.POST("/field-maps/bulk", bulkFieldMapsHandler(d))
+	master.DELETE("/field-maps/:id", deleteFieldMapHandler(d))
 
 	// C-code (REP ingest + review)
 	claim := r.Group("/api/v1/claim")
