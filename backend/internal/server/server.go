@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,6 +21,7 @@ import (
 	"github.com/nexclaim/nexclaim/internal/batch"
 	"github.com/nexclaim/nexclaim/internal/extractor"
 	"github.com/nexclaim/nexclaim/internal/hisclient"
+	"github.com/nexclaim/nexclaim/internal/ipdimport"
 	"github.com/nexclaim/nexclaim/internal/model"
 	"github.com/nexclaim/nexclaim/internal/pipeline"
 	"github.com/nexclaim/nexclaim/internal/sender"
@@ -494,124 +494,45 @@ func runImportHandler(d Deps) gin.HandlerFunc {
 			return
 		}
 		exportID := c.Param("exportId")
-		incoming := filepath.Join(d.IPDShareRoot, "incoming", exportID)
-		if _, err := os.Stat(filepath.Join(incoming, "MANIFEST.json")); err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "MANIFEST.json not found at " + incoming})
-			return
-		}
 		dryRun := c.Query("dry_run") == "true"
 
-		fx := extractor.NewFileExtractor(incoming)
-		admits, err := fx.Admits()
-		if err != nil {
-			if mvErr := moveToError(d.IPDShareRoot, exportID, "parse: "+err.Error()); mvErr != "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "moveError": mvErr})
-				return
-			}
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		proc := &ipdimport.Processor{
+			Root:      d.IPDShareRoot,
+			FDH:       d.FDH,
+			CHI:       d.CHI,
+			ClaimRepo: d.ClaimRepo,
+			Master:    d.Master,
+		}
+		res, err := proc.Process(c.Request.Context(), exportID, dryRun)
+		if err != nil && res == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
-		meta := fx.Manifest()
 
-		// Bucket admits by INSCL → pipeline per bucket
-		buckets := make(map[model.INSCL][]model.IPDAdmit)
-		for _, a := range admits {
-			buckets[a.Patient.INSCL] = append(buckets[a.Patient.INSCL], a)
+		runs := make([]map[string]any, 0, len(res.Runs))
+		for _, r := range res.Runs {
+			item := map[string]any{
+				"inscl":       string(r.INSCL),
+				"admit_count": r.AdmitCount,
+			}
+			if r.Outcome != nil {
+				dto := outcomeToDTO(r.Outcome)
+				item["outcome"] = dto
+			}
+			if r.Err != nil {
+				item["error"] = r.Err.Error()
+			}
+			runs = append(runs, item)
 		}
-
-		type runOut struct {
-			INSCL      string          `json:"inscl"`
-			AdmitCount int             `json:"admit_count"`
-			Outcome    *SubmitResponse `json:"outcome,omitempty"`
-			Error      string          `json:"error,omitempty"`
+		resp := gin.H{"export_id": res.ExportID, "dryRun": res.DryRun, "runs": runs}
+		if res.MoveError != "" {
+			resp["moveError"] = res.MoveError
 		}
-		results := make([]runOut, 0, len(buckets))
-
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Minute)
-		defer cancel()
-
-		for inscl, as := range buckets {
-			mem := extractor.NewMemoryExtractor()
-			mem.Put(meta.Period, inscl, extractor.Result{IPD: as})
-			out, err := pipeline.Run(ctx, pipeline.Options{
-				HCode:  meta.HospitalCode,
-				Period: meta.Period,
-				INSCL:  inscl,
-				DryRun: dryRun,
-				Extr:   mem,
-				FDH:    d.FDH,
-				CHI:    d.CHI,
-				Master: d.Master,
-			})
-			if !dryRun {
-				persistRun(ctx, d, meta.HospitalCode, meta.Period, out)
-			}
-			dto := outcomeToDTO(out)
-			item := runOut{INSCL: string(inscl), AdmitCount: len(as), Outcome: &dto}
-			if err != nil {
-				item.Error = err.Error()
-			}
-			results = append(results, item)
-		}
-
-		// Move to processed/ only if no per-bucket errors AND not dry-run.
-		resp := gin.H{"export_id": exportID, "dryRun": dryRun, "runs": results}
-		if !dryRun {
-			anyErr := false
-			var reasons []string
-			for _, r := range results {
-				if r.Error != "" {
-					anyErr = true
-					reasons = append(reasons, r.INSCL+": "+r.Error)
-				}
-			}
-			var moveErrMsg string
-			if anyErr {
-				moveErrMsg = moveToError(d.IPDShareRoot, exportID,
-					"pipeline errors: "+strings.Join(reasons, "; "))
-			} else {
-				moveErrMsg = moveToProcessed(d.IPDShareRoot, exportID)
-			}
-			if moveErrMsg != "" {
-				resp["moveError"] = moveErrMsg
-			}
+		if err != nil {
+			resp["error"] = err.Error()
 		}
 		c.JSON(http.StatusOK, resp)
 	}
-}
-
-// moveToProcessed archives a successfully-imported export folder.
-// Returns an error message (empty on success).
-func moveToProcessed(root, exportID string) string {
-	src := filepath.Join(root, "incoming", exportID)
-	dst := filepath.Join(root, "processed", exportID)
-	if err := os.MkdirAll(filepath.Join(root, "processed"), 0o755); err != nil {
-		return "mkdir processed: " + err.Error()
-	}
-	if err := os.Rename(src, dst); err != nil {
-		return err.Error()
-	}
-	return ""
-}
-
-// moveToError archives a failed import and drops a text file describing why,
-// so the HIS team can inspect the folder later and diagnose what broke.
-// Returns an error message (empty on success).
-func moveToError(root, exportID, reason string) string {
-	src := filepath.Join(root, "incoming", exportID)
-	dst := filepath.Join(root, "error", exportID)
-	if err := os.MkdirAll(filepath.Join(root, "error"), 0o755); err != nil {
-		return "mkdir error: " + err.Error()
-	}
-	if err := os.Rename(src, dst); err != nil {
-		return err.Error()
-	}
-	payload := fmt.Sprintf("export_id: %s\ntime: %s\nreason: %s\n",
-		exportID, time.Now().Format(time.RFC3339), reason)
-	if err := os.WriteFile(filepath.Join(dst, "ERROR.txt"), []byte(payload), 0o644); err != nil {
-		return "write ERROR.txt: " + err.Error()
-	}
-	return ""
 }
 
 // ── /api/status/:txnId ──

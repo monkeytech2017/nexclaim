@@ -15,10 +15,12 @@ import (
 	"github.com/nexclaim/nexclaim/internal/db"
 	"github.com/nexclaim/nexclaim/internal/extractor"
 	"github.com/nexclaim/nexclaim/internal/hisclient"
+	"github.com/nexclaim/nexclaim/internal/ipdimport"
 	"github.com/nexclaim/nexclaim/internal/sender"
 	"github.com/nexclaim/nexclaim/internal/server"
 	"github.com/nexclaim/nexclaim/internal/store"
 	"github.com/nexclaim/nexclaim/internal/validator"
+	"github.com/nexclaim/nexclaim/internal/watcher"
 )
 
 func runServer(args []string) {
@@ -119,6 +121,23 @@ func runServer(args []string) {
 		Master:        master,
 		StatusLookup:  fdh,
 	})
+
+	// IPD auto-watcher: start if IPD_WATCH_INTERVAL is set (e.g. "60s", "5m").
+	// Zero / unset = disabled — admin still triggers imports manually.
+	if raw := os.Getenv("IPD_WATCH_INTERVAL"); raw != "" && ipdShareRoot != "" {
+		if interval, err := time.ParseDuration(raw); err != nil {
+			fmt.Fprintf(os.Stderr, "[NexClaim] IPD_WATCH_INTERVAL %q invalid: %v\n", raw, err)
+		} else if interval > 0 {
+			proc := &ipdimport.Processor{
+				Root:      ipdShareRoot,
+				FDH:       fdh,
+				CHI:       chi,
+				ClaimRepo: claimRepo,
+				Master:    master,
+			}
+			go (&watcher.IPD{Proc: proc, Interval: interval}).Run(context.Background())
+		}
+	}
 
 	listen := *addr
 	if listen == "" {
