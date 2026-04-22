@@ -226,6 +226,52 @@ export const hospitalsApi = {
     request<void>(`/api/v1/master/hospitals/${encodeURIComponent(hcode)}`, { method: 'DELETE' }),
 }
 
+// ── Master data: Doctors ──
+
+export interface Doctor {
+  doctor_id:  string
+  hcode:      string
+  license_no: string
+  name_th?:   string
+  specialty?: string
+  is_active:  boolean
+  updated_at?: string
+}
+
+export const doctorsApi = {
+  list:   (hcode?: string) =>
+    request<{ doctors: Doctor[] }>(`/api/v1/master/doctors${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
+  get:    (id: string) => request<Doctor>(`/api/v1/master/doctors/${encodeURIComponent(id)}`),
+  create: (d: Doctor) =>
+    request<Doctor>('/api/v1/master/doctors', { method: 'POST', body: JSON.stringify(d) }),
+  update: (id: string, d: Partial<Doctor>) =>
+    request<Doctor>(`/api/v1/master/doctors/${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify({ ...d, doctor_id: id }),
+    }),
+  delete: (id: string) =>
+    request<void>(`/api/v1/master/doctors/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+}
+
+// ── Master data: INSCL mapping (per hospital) ──
+
+export interface InsclMap {
+  hcode:        string
+  his_pttype:   string
+  inscl:        string
+  agency_code?: string
+  note?:        string
+}
+
+export const insclMapsApi = {
+  list:   (hcode?: string) =>
+    request<{ items: InsclMap[] }>(`/api/v1/master/inscl-maps${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
+  upsert: (m: InsclMap) =>
+    request<InsclMap>('/api/v1/master/inscl-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (hcode: string, hisPttype: string) =>
+    request<void>(`/api/v1/master/inscl-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(hisPttype)}`,
+      { method: 'DELETE' }),
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {

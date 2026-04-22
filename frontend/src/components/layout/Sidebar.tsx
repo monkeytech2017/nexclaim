@@ -8,6 +8,8 @@ import {
   History,
   Send,
   Building2,
+  Stethoscope,
+  ArrowRightLeft,
 } from 'lucide-react'
 
 const sections = [
@@ -24,7 +26,9 @@ const sections = [
   {
     title: 'Master Data',
     items: [
-      { href: '/admin/hospitals', label: 'โรงพยาบาล',  icon: Building2 },
+      { href: '/admin/hospitals',  label: 'โรงพยาบาล',   icon: Building2 },
+      { href: '/admin/doctors',    label: 'แพทย์',        icon: Stethoscope },
+      { href: '/admin/inscl-maps', label: 'INSCL Mapping', icon: ArrowRightLeft, hint: 'HIS→NHSO' },
     ],
   },
 ] as const
