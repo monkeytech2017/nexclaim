@@ -66,12 +66,18 @@ type Submission struct {
 }
 
 // Outcome สรุปผลรวมของ pipeline run.
+//
+// OPD/IPD hold the raw records ที่ extractor ส่งกลับมา — persistence layer
+// (internal/store/ClaimRepo) ใช้ iterate เพื่อเขียน claim_record. JSON tag
+// ถูก omit ให้ frontend ไม่เห็น raw data.
 type Outcome struct {
-	INSCL            model.INSCL
-	OPDCount         int
-	IPDCount         int
-	ValidationErrors []validator.ValidationError
-	Submissions      []Submission
+	INSCL            model.INSCL                 `json:"inscl"`
+	OPDCount         int                         `json:"opdCount"`
+	IPDCount         int                         `json:"ipdCount"`
+	ValidationErrors []validator.ValidationError `json:"validationErrors,omitempty"`
+	Submissions      []Submission                `json:"submissions"`
+	OPD              []model.OPDVisit            `json:"-"`
+	IPD              []model.IPDAdmit            `json:"-"`
 }
 
 // Run pipeline สำหรับ (INSCL, period).
@@ -95,6 +101,8 @@ func Run(ctx context.Context, opt Options) (*Outcome, error) {
 		INSCL:    opt.INSCL,
 		OPDCount: len(res.OPD),
 		IPDCount: len(res.IPD),
+		OPD:      res.OPD,
+		IPD:      res.IPD,
 	}
 	for _, v := range res.OPD {
 		out.ValidationErrors = append(out.ValidationErrors, validator.ValidateOPD(v)...)

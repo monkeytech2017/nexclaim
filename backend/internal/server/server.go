@@ -25,6 +25,7 @@ import (
 	"github.com/nexclaim/nexclaim/internal/model"
 	"github.com/nexclaim/nexclaim/internal/pipeline"
 	"github.com/nexclaim/nexclaim/internal/sender"
+	"github.com/nexclaim/nexclaim/internal/store"
 	"github.com/nexclaim/nexclaim/internal/validator"
 )
 
@@ -42,6 +43,9 @@ type Deps struct {
 	// incoming/, processed/, error/). ถ้าว่าง → endpoint /api/v1/his/ipd/*
 	// คืน 503.
 	IPDShareRoot string
+	// ClaimRepo persists pipeline.Outcome → claim_batch/claim_record.
+	// If nil, runs are not persisted (NoopClaimRepo is used).
+	ClaimRepo store.ClaimRepo
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
 	StatusLookup interface {
 		GetStatus(txnID string) (*sender.SubmitResult, error)
@@ -154,6 +158,9 @@ func submitHandler(d Deps) gin.HandlerFunc {
 			code := http.StatusInternalServerError
 			c.JSON(code, gin.H{"error": err.Error()})
 			return
+		}
+		if !req.DryRun {
+			persistRun(ctx, d, hcode, req.Period, out)
 		}
 		resp := outcomeToDTO(out)
 		if err != nil {
@@ -341,6 +348,9 @@ func processBatchHandler(d Deps) gin.HandlerFunc {
 				FDH:    d.FDH,
 				CHI:    d.CHI,
 			})
+			if !dryRun {
+				persistRun(ctx, d, b.HospitalCode, b.Period, out)
+			}
 			dto := outcomeToDTO(out)
 			item := batchRunOutcome{INSCL: inscl, VNCount: len(vns), Outcome: &dto}
 			if err != nil {
@@ -473,6 +483,9 @@ func runImportHandler(d Deps) gin.HandlerFunc {
 				FDH:    d.FDH,
 				CHI:    d.CHI,
 			})
+			if !dryRun {
+				persistRun(ctx, d, meta.HospitalCode, meta.Period, out)
+			}
 			dto := outcomeToDTO(out)
 			item := runOut{INSCL: string(inscl), AdmitCount: len(as), Outcome: &dto}
 			if err != nil {
@@ -564,6 +577,20 @@ func statusHandler(d Deps) gin.HandlerFunc {
 			"status":  res.Status,
 			"message": res.Message,
 		})
+	}
+}
+
+// persistRun saves a live (non-dry-run) outcome via the configured ClaimRepo.
+// Swallows errors — persistence failures must not fail the API response the
+// HIS operator already saw. They are logged to stderr for later triage.
+func persistRun(ctx context.Context, d Deps, hcode, period string, out *pipeline.Outcome) {
+	if out == nil || d.ClaimRepo == nil {
+		return
+	}
+	if err := d.ClaimRepo.SaveRun(ctx, store.SaveRequest{
+		HCode: hcode, Period: period, Outcome: out,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "[NexClaim] claim_repo save: %v\n", err)
 	}
 }
 
