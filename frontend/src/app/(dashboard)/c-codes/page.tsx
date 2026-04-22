@@ -3,6 +3,7 @@ import { useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ccodesApi, hospitalsApi } from '@/lib/api'
+import { useIdentity } from '@/lib/auth-context'
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '@/components/ui/feedback'
 import { RefreshCw, CheckCircle2, Download, X } from 'lucide-react'
 
@@ -20,7 +21,9 @@ function CCodesContent() {
   const router = useRouter()
   const batchFromURL = searchParams.get('batch') ?? ''
 
-  const [filterHcode, setFilterHcode] = useState('')
+  const identity = useIdentity()
+  const isHospital = identity?.role === 'hospital'
+  const [filterHcode, setFilterHcode] = useState(isHospital ? identity.hcode ?? '' : '')
   const [filterPeriod, setFilterPeriod] = useState('')
   const [filterResolved, setFilterResolved] = useState<'' | 'true' | 'false'>('false')
   const [filterCode, setFilterCode] = useState('')
@@ -76,9 +79,11 @@ function CCodesContent() {
       <div className="flex items-center gap-2 flex-wrap">
         <select value={filterHcode}
           onChange={e => setFilterHcode(e.target.value)}
-          className="text-xs border border-gray-200 rounded-lg px-2 py-1">
+          disabled={isHospital}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1 disabled:bg-gray-50 disabled:text-gray-500">
           <option value="">เลือก รพ.</option>
           {hcodes.map(h => <option key={h} value={h}>{h}</option>)}
+          {isHospital && filterHcode && !hcodes.includes(filterHcode) && <option value={filterHcode}>{filterHcode}</option>}
         </select>
         <input
           type="text" value={filterPeriod}

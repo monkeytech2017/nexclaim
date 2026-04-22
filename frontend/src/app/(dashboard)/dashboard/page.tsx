@@ -11,6 +11,7 @@ import {
   Inbox, CheckCircle2, AlertTriangle, Timer,
 } from 'lucide-react'
 import { dashboardApi, hospitalsApi } from '@/lib/api'
+import { useIdentity } from '@/lib/auth-context'
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '@/components/ui/feedback'
 
 // Colors aligned with FormatBadge palette (badges.tsx).
@@ -31,8 +32,10 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const identity = useIdentity()
+  const isHospital = identity?.role === 'hospital'
 
-  const [hcode, setHcode] = useState('')
+  const [hcode, setHcode] = useState(isHospital ? identity.hcode ?? '' : '')
   const [periodFrom, setPeriodFrom] = useState('')
   const [periodTo, setPeriodTo] = useState('')
 
@@ -80,7 +83,8 @@ export default function DashboardPage() {
             <select
               value={hcode}
               onChange={e => setHcode(e.target.value)}
-              className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white"
+              disabled={isHospital}
+              className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white disabled:bg-gray-50 disabled:text-gray-500"
             >
               <option value="">ทั้งหมด</option>
               {(hospitals.data?.hospitals ?? []).map(h => (
@@ -88,6 +92,9 @@ export default function DashboardPage() {
                   {h.hcode} — {h.name_th}
                 </option>
               ))}
+              {isHospital && hcode && !(hospitals.data?.hospitals ?? []).some(h => h.hcode === hcode) && (
+                <option value={hcode}>{hcode}</option>
+              )}
             </select>
           </div>
           <div>

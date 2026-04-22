@@ -2,6 +2,7 @@
 import { usePathname } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { health } from '@/lib/api'
+import { useIdentity } from '@/lib/auth-context'
 
 const titles: Record<string, string> = {
   '/dashboard':       'ภาพรวม',
@@ -29,6 +30,7 @@ function titleFor(pathname: string): string {
 export default function Header() {
   const pathname = usePathname()
   const title = titleFor(pathname)
+  const identity = useIdentity()
 
   const { data, isError } = useQuery({
     queryKey: ['health'],
@@ -51,6 +53,20 @@ export default function Header() {
         <span className={`text-[11px] px-2 py-1 rounded-full font-medium ${statusCls}`}>
           {statusLabel}
         </span>
+        {identity && (
+          <span
+            className={`text-xs px-2 py-1 rounded-full font-medium ${
+              identity.role === 'admin'
+                ? 'bg-gray-100 text-gray-700'
+                : 'bg-blue-50 text-blue-700'
+            }`}
+            title={identity.id}
+          >
+            {identity.role === 'admin'
+              ? `admin — ${identity.name}`
+              : `รพ. ${identity.hcode ?? ''} — ${identity.name}`}
+          </span>
+        )}
         <div className="w-7 h-7 rounded-full bg-primary-50 flex items-center justify-center text-xs font-medium text-primary-600">
           JT
         </div>

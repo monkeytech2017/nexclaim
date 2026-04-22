@@ -593,6 +593,14 @@ ENV=production
 LOG_LEVEL=info
 ```
 
+### Frontend (`frontend/.env.local`)
+
+```env
+# API key ที่ออกจาก `nexclaim auth create-admin` (หรือ hospital key).
+# ปล่อยว่างได้ถ้า backend ตั้ง AUTH_ENABLED=false.
+NEXT_PUBLIC_API_KEY=
+```
+
 ---
 
 ## 13. Quick Start

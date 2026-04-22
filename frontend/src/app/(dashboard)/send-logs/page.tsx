@@ -3,6 +3,7 @@ import { useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { sendLogsApi, hospitalsApi } from '@/lib/api'
+import { useIdentity } from '@/lib/auth-context'
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '@/components/ui/feedback'
 import { FormatBadge, InsclBadge } from '@/components/ui/badges'
 import { RefreshCw, CheckCircle2, AlertCircle, X } from 'lucide-react'
@@ -20,7 +21,9 @@ function SendLogsContent() {
   const router = useRouter()
   const batchFromURL = searchParams.get('batch') ?? ''
 
-  const [hcode, setHcode] = useState('')
+  const identity = useIdentity()
+  const isHospital = identity?.role === 'hospital'
+  const [hcode, setHcode] = useState(isHospital ? identity.hcode ?? '' : '')
   const [period, setPeriod] = useState('')
   const [success, setSuccess] = useState<'' | 'true' | 'false'>('')
 
@@ -62,9 +65,11 @@ function SendLogsContent() {
 
       <div className="flex items-center gap-2 flex-wrap">
         <select value={hcode} onChange={e => setHcode(e.target.value)}
-          className="text-xs border border-gray-200 rounded-lg px-2 py-1">
+          disabled={isHospital}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1 disabled:bg-gray-50 disabled:text-gray-500">
           <option value="">ทั้ง รพ.</option>
           {hcodes.map(h => <option key={h} value={h}>{h}</option>)}
+          {isHospital && hcode && !hcodes.includes(hcode) && <option value={hcode}>{hcode}</option>}
         </select>
         <input type="text" value={period} onChange={e => setPeriod(e.target.value)}
           placeholder="YYYYMM" maxLength={6}

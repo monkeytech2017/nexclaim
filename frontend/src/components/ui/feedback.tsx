@@ -1,4 +1,5 @@
 import { Loader2, AlertCircle } from 'lucide-react'
+import { AuthError } from '@/lib/api'
 
 export function LoadingBlock({ label = 'กำลังโหลด...' }: { label?: string }) {
   return (
@@ -10,7 +11,9 @@ export function LoadingBlock({ label = 'กำลังโหลด...' }: { lab
 }
 
 export function ErrorBlock({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const msg = error instanceof Error ? error.message : String(error)
+  const msg = error instanceof AuthError
+    ? 'ต้องตั้งค่า NEXT_PUBLIC_API_KEY ก่อน'
+    : error instanceof Error ? error.message : String(error)
   return (
     <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start gap-3">
       <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />

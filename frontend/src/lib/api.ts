@@ -2,10 +2,38 @@
 
 const BASE = '/api/backend'
 
+// ── Typed errors ─────────────────────────────────────────────────────────────
+// AuthError → missing/invalid API key (HTTP 401).
+// ScopeError → key valid but lacks scope for this resource (HTTP 403).
+// Both extend Error so existing `error instanceof Error` callers keep working.
+
+export class AuthError extends Error {
+  constructor(message = 'ไม่ได้รับอนุญาต (401) — ตรวจสอบ API key') {
+    super(message)
+    this.name = 'AuthError'
+  }
+}
+
+export class ScopeError extends Error {
+  constructor(message = 'ไม่มีสิทธิ์เข้าถึงข้อมูลนี้ (403)') {
+    super(message)
+    this.name = 'ScopeError'
+  }
+}
+
+function authHeader(): Record<string, string> {
+  const key = process.env.NEXT_PUBLIC_API_KEY
+  return key ? { Authorization: `Bearer ${key}` } : {}
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeader(),
+      ...(options?.headers ?? {}),
+    },
   })
   if (!res.ok) {
     let msg: string
@@ -15,6 +43,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     } catch {
       msg = await res.text()
     }
+    if (res.status === 401) throw new AuthError(msg || undefined)
+    if (res.status === 403) throw new ScopeError(msg || undefined)
     throw new Error(`${res.status}: ${msg}`)
   }
   if (res.status === 204) return undefined as T
@@ -84,6 +114,18 @@ export const submitDirect = (body: DirectSubmitRequest) =>
 export interface StatusResponse { txnId: string; status: string; message: string }
 export const getStatus = (txnId: string) =>
   request<StatusResponse>(`/api/status/${encodeURIComponent(txnId)}`)
+
+// ── Auth / whoami ──
+
+export interface Identity {
+  id: string
+  role: 'admin' | 'hospital'
+  hcode?: string
+  name: string
+}
+export const authApi = {
+  whoami: () => request<Identity>('/api/v1/auth/whoami'),
+}
 
 // ── OPD 2-Way: visits + batches ──
 
