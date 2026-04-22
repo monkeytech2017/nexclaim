@@ -17,6 +17,9 @@ vendor/
 *.swp
 *.swo
 
+# Claude Code working state (worktrees, plans)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -32,3 +35,9 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+frontend/tsconfig.tsbuildinfo

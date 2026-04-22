@@ -2,7 +2,7 @@
 
 > **NexClaim** — Healthcare Claim Middleware
 > *Every claim, every fund — connected.*
-> อัปเดตล่าสุด: เมษายน 2568
+> อัปเดตล่าสุด: เมษายน 2569 (monorepo: `backend/` + `frontend/`)
 
 ---
 
@@ -45,61 +45,60 @@
 ## 2. โครงสร้าง Project
 
 ```
-nexclaim/
+nexconnect/
 ├── CLAUDE.md
-├── go.mod
-├── go.sum
-├── .env                          ← credentials (ห้าม commit)
-├── main.go                       ← entry point
-├── cmd/
-│   ├── root.go                   ← cobra root command
-│   ├── submit.go                 ← nexclaim submit ...
-│   ├── status.go                 ← nexclaim status ...
-│   └── server.go                 ← nexclaim server (HTTP mode)
-├── internal/
-│   ├── model/
-│   │   └── model.go              ← domain types: Patient, OPDVisit, IPDAdmit, INSCL ...
-│   ├── config/
-│   │   └── config.go             ← load .env, validate
-│   ├── router/
-│   │   └── router.go             ← Route(inscl, isIPD) → RouteResult
-│   ├── extractor/
-│   │   └── his.go                ← ดึงข้อมูลจาก HIS DB
-│   ├── generator/
-│   │   ├── file16/
-│   │   │   └── file16.go         ← สร้าง 16 แฟ้ม (.txt)
-│   │   ├── cipn/
-│   │   │   └── cipn.go           ← XML CIPN (IPD ข้าราชการ/อปท./OFC)
-│   │   ├── csop/
-│   │   │   └── csop.go           ← XML CSOP (OPD ข้าราชการ/อปท./OFC)
-│   │   ├── aipn/
-│   │   │   └── aipn.go           ← XML AIPN (IPD ประกันสังคม)
-│   │   └── ssop/
-│   │       └── ssop.go           ← XML SSOP (OPD ประกันสังคม)
-│   ├── validator/
-│   │   ├── field.go              ← validate PERSON_ID, Date, UUC, AN, SEQ
-│   │   ├── icd.go                ← validate ICD-10, ICD-9CM
-│   │   └── rules.go              ← business rules แยกตามสิทธิ
-│   ├── sender/
-│   │   ├── fdh.go                ← POST ไป FDH API
-│   │   ├── chi.go                ← POST ไป cs8.chi.or.th (SSO)
-│   │   └── zip.go                ← build ZIP + append MD5
-│   ├── response/
-│   │   ├── ack.go                ← parse ACK
-│   │   └── ccode.go              ← parse C-code จาก REP
-│   └── util/
-│       ├── date.go               ← ToAD(), FormatDate(), ParseHISDate()
-│       └── logger.go             ← zerolog setup
-├── data/
-│   ├── icd10.json                ← ICD-10 WHO master list
-│   ├── icd9cm.json               ← ICD-9CM master list
-│   ├── tmt.json                  ← TMT drug code 24 หลัก
-│   └── chrgitem.json             ← หมวดค่าบริการ 01–16
-└── tests/
-    ├── router_test.go
-    ├── cipn_test.go
-    ├── validator_test.go
-    └── date_test.go
+├── README.md
+├── .env.example
+├── NexClaim_HIS_Integration_Spec.xlsx   ← HIS team reference (OPD 2-way + IPD share-file)
+├── backend/                              ← Go service
+│   ├── go.mod / go.sum
+│   ├── main.go                           ← calls cmd.Execute()
+│   ├── cmd/
+│   │   ├── root.go                       ← flag-stdlib dispatcher (submit/status/server)
+│   │   ├── submit.go                     ← CLI: submit --inscl --period [--dry-run]
+│   │   └── server.go                     ← CLI: server (gin HTTP)
+│   ├── internal/
+│   │   ├── model/model.go                ← domain types: Patient, OPDVisit, IPDAdmit, INSCL, ...
+│   │   ├── config/config.go              ← load .env via godotenv + validate
+│   │   ├── router/router.go              ← Route(inscl, isIPD) → RouteResult
+│   │   ├── pipeline/pipeline.go          ← extractor → validator → generator → sender
+│   │   ├── extractor/
+│   │   │   ├── his.go                    ← Extractor interface + MemoryExtractor
+│   │   │   ├── api.go                    ← APIExtractor (OPD 2-way via HIS client)
+│   │   │   └── file.go                   ← FileExtractor (IPD share folder)
+│   │   ├── hisclient/                    ← HIS API client (OPD 2-way)
+│   │   │   ├── dto.go                    ← request/response JSON structs
+│   │   │   ├── client.go                 ← resty: GetVisit, GetVisitsBatch, Health, GetDrugList
+│   │   │   └── mapper.go                 ← VisitDetail → model.OPDVisit
+│   │   ├── sharefile/                    ← IPD share folder (CSV)
+│   │   │   ├── manifest.go               ← MANIFEST.json parse + validate
+│   │   │   ├── csv.go                    ← pipe-delimited UTF-8 reader
+│   │   │   ├── parse.go                  ← 10 row types + per-file parsers
+│   │   │   └── assemble.go               ← join rows → []model.IPDAdmit
+│   │   ├── batch/                        ← OPD ingest batch (interface + Memory/Pg impls)
+│   │   │   ├── store.go                  ← Store interface + MemoryStore + New helpers
+│   │   │   └── pg_store.go               ← Postgres-backed impl (opd_ingest_batch/_visit)
+│   │   ├── db/db.go                      ← sqlx connection pool (lib/pq driver)
+│   │   ├── generator/
+│   │   │   ├── file16/ (file16.go + records.go)  ← 16 แฟ้ม pipe-delimited
+│   │   │   ├── cipn/cipn.go              ← XML CIPN (IPD ข้าราชการ/อปท./OFC)
+│   │   │   ├── csop/csop.go              ← XML CSOP (OPD ข้าราชการ/อปท./OFC)
+│   │   │   ├── aipn/aipn.go              ← XML AIPN (IPD ประกันสังคม)
+│   │   │   └── ssop/ssop.go              ← XML SSOP (OPD ประกันสังคม)
+│   │   ├── validator/                    ← field.go, icd.go, rules.go
+│   │   ├── sender/                       ← fdh.go, chi.go, zip.go
+│   │   ├── response/                     ← ack.go, ccode.go
+│   │   ├── server/server.go              ← gin HTTP router + handlers
+│   │   └── util/                         ← date.go, str.go
+│   ├── migrations/                       ← 000_create_database (th_TH.UTF-8), 001_master_data,
+│   │                                        002_his_mapping, 003_transactions, 004_ingest_batch
+│   ├── scripts/init_db.sh                ← wrapper: check locale + create DB + apply migrations
+│   ├── data/                             ← icd10.json, icd9cm.json, tmt.json, chrgitem.json
+│   └── tests/                            ← *_test.go (88 tests: router, pipeline, file16, cipn, csop,
+│                                             aipn, ssop, hisclient, sharefile, server, ipd_import, ...)
+└── frontend/                             ← Next.js 14 App Router (scaffold)
+    ├── package.json / tsconfig.json / tailwind.config.ts
+    └── src/ (app/, components/, lib/, types/)
 ```
 
 ---
@@ -366,22 +365,94 @@ WP1/WP2/NON        → PERSON_ID validate format แยก
 
 ---
 
-## 9. FDH API
+## 9. Integration Architecture (HIS ↔ NexClaim ↔ Fund Agencies)
 
 ```
-POST /api/auth/token               → Bearer JWT (1 ชั่วโมง)
-POST /api/claim/16files            → ส่ง 16 แฟ้ม UC (multipart ZIP)
-POST /api/claim/cipn               → ส่ง CIPN (IPD ข้าราชการ)
-POST /api/claim/csop               → ส่ง CSOP (OPD ข้าราชการ)
-GET  /api/claim/status/{txnId}     → ตรวจสถานะ
-GET  /api/claim/rep/{YYYYMM}       → ดาวน์โหลด REP (C-code)
+┌──────────────┐   OPD 2-Way API        ┌───────────────┐   CIPN/CSOP/16-files   ┌────────┐
+│  HIS (รพ.)   │ ───── POST visits ───▶│               │ ────────────────────▶│  FDH   │
+│              │ ◀──── GET visit/{vn} ─│   NexClaim    │                       └────────┘
+│              │                        │   Pipeline     │   AIPN/SSOP            ┌────────┐
+│              │   IPD Share Folder     │  (routing →    │ ────────────────────▶│cs8.chi │
+│              │ ── export CSV + ─────▶│   generate →   │                       └────────┘
+│              │    MANIFEST.json       │   zip+md5 →    │
+└──────────────┘                        │   submit)      │
+                                        └───────────────┘
+```
 
-SSO:
-POST https://cs8.chi.or.th                 → SSOP
-POST https://cs8.chi.or.th/aipnupload/    → AIPN
+### 9.1 OPD — 2-Way API
+
+| # | ทิศทาง | Endpoint | Purpose |
+|---|--------|----------|---------|
+| 1 | HIS → NexClaim | `POST /api/v1/his/opd/visits` | HIS push visit summary → รับ `batchId` |
+| 2 | NexClaim → HIS | `GET /api/nexclaim/opd/visit/{vn}` | ดึง detail (patient+dx+dr+charge+ref+acc) |
+| 3 | NexClaim → HIS | `GET /api/nexclaim/opd/visits?vn=...` | batch ≤50 |
+| 4 | NexClaim → HIS | `GET /api/nexclaim/drug/list?page&limit` | TMT mapping (drug master) |
+| 5 | NexClaim → HIS | `GET /api/nexclaim/health` | liveness |
+
+Auth: Bearer/API-Key (ENV `HIS_API_BASE_URL` + `HIS_API_TOKEN`).
+
+### 9.2 IPD — Shared Folder (CSV)
+
+```
+/shared/nexclaim/ipd/
+├── incoming/{export_id}/            ← HIS export CSV 10 ไฟล์ + MANIFEST.json (last)
+├── processed/{export_id}/           ← NexClaim archive หลังสำเร็จ
+└── error/{export_id}/               ← ถ้า parse/pipeline fail + ERROR.txt
+```
+
+ไฟล์ CSV (pipe-delimited `|`, UTF-8, header row, empty = null):
+
+| File | บังคับ | เนื้อหา |
+|------|-------|---------|
+| PAT.csv | ✓ | pid, prefix, first/last name, dob, sex, marriage, nation, changwat, amphur, address |
+| IPD.csv | ✓ | an, pid, hn, inscl, permit_no, agency_code, date_adm/dsc, time_adm/dsc, ward, los, dischs, discht, drg_code, adj_rw, doctor_code, uuc |
+| IDX.csv | ✓ | an, icd10, dx_type, doctor_code |
+| IOP.csv | ถ้ามี | an, icd9cm, op_date, op_time, doctor_code, charge |
+| DRU.csv | ✓ | an, his_item_id, his_item_name, tmt_tp, tmt24, quantity, unit, unit_price, total_price, drug_date_start/end, usage, doctor_code |
+| CHT.csv | ✓ | an, total_charge, total_claim, total_copay |
+| CHA.csv | บังคับ CSMBS/LGO/OFC | an, chrgitem (01-16), amount |
+| AER.csv | ถ้ามี | an, ae_date, ae_time, ae_type, cause, place |
+| IRF.csv | ถ้ามี | an, refer_from, refer_to, refer_date, refer_cause |
+| LVD.csv | ถ้ามี | an, leave_date, leave_days |
+
+MANIFEST.json = signal ตัวสุดท้าย: `{export_id, export_date, period, hospital_code, total_admissions, files, exported_by}`.
+
+### 9.3 Fund Agencies (outbound)
+
+```
+FDH (MOPH Financial Data Hub)
+  POST /api/auth/token               → Bearer JWT (1 ชั่วโมง)
+  POST /api/claim/16files            → UC 16 แฟ้ม (multipart ZIP)
+  POST /api/claim/cipn               → IPD CSMBS/LGO/OFC
+  POST /api/claim/csop               → OPD CSMBS/LGO/OFC
+  GET  /api/claim/status/{txnId}     → สถานะ
+  GET  /api/claim/rep/{YYYYMM}       → REP (C-code)
+
+CHI (cs8.chi.or.th) — SSO Basic auth
+  POST /ssopupload/                  → SSOP (OPD ม.33/39/40)
+  POST /aipnupload/                  → AIPN (IPD ม.33/39/40)
 ```
 
 ส่งใน 24 ชม. → สปสช.จ่ายใน 72 ชม. | ช้ากว่า → OPD 15 วัน, IPD 30 วัน
+
+---
+
+## 9A. NexClaim HTTP API (gin)
+
+```
+GET  /healthz
+POST /api/submit                                    ← pipeline.Run ตรง (dev/admin)
+GET  /api/status/:txnId                             ← forward ไป FDH
+POST /api/v1/his/opd/visits                         ← HIS push visit list → batchId
+GET  /api/v1/his/opd/batches/:batchId               ← status ของ batch
+POST /api/v1/his/opd/batches/:batchId/process       ← fetch detail → pipeline
+  ?dry_run=true                                       (skip FDH/CHI submit)
+GET  /api/v1/his/ipd/imports                        ← list folders ใน incoming/
+POST /api/v1/his/ipd/imports/:exportId              ← parse → pipeline per INSCL
+  ?dry_run=true                                       + move ไป processed/ หรือ error/
+```
+
+Pipeline ทุกรอบทำ: **extract → validate → bucket by INSCL → generate (16-file/CIPN/CSOP/AIPN/SSOP) → zip+md5 → submit**.
 
 ---
 
@@ -406,41 +477,42 @@ func FormatDateTime(t time.Time) string { return t.Format("20060102150405") }
 
 ## 11. Coding Conventions
 
-- ทุก package มี `_test.go` — ห้าม merge โดยไม่มี test
+- ทุก package มี `_test.go` — ห้าม merge โดยไม่มี test (tests อยู่ที่ `backend/tests/`)
 - error wrapping: `fmt.Errorf("context: %w", err)` ทุกที่
 - log ทุก claim: `{ txnId, hcode, inscl, format, period, status }`
 - XML struct field ตั้งชื่อตาม spec (**UPPERCASE**): `AN`, `DATEADM`, `DRDX`
 - แต่ละ format อยู่ใน package แยก — ห้าม CIPN logic รั่วเข้า CSOP
-- Date ทุก field ต้องผ่าน `util.ToAD()` + `validator.IsValidDate()` ก่อนใส่ struct
-- ห้าม send โดยไม่ผ่าน validator ก่อนทุกครั้ง
-- `go build ./...` และ `go test ./...` ต้องผ่านก่อน commit
+- Date ทุก field ต้องผ่าน `util.ToAD()` หรือ `util.ParseHISDate()` ก่อนใส่ struct
+- Default ("" → "1" สำหรับ UUC) ใช้ `util.StrOr` — ห้าม copy `orDefault` helper ในแต่ละ package
+- ห้าม send โดยไม่ผ่าน validator ก่อน (pipeline block submit ถ้ามี validation errors + ไม่ใช่ dry-run)
+- `go build ./...` และ `go test ./...` ต้องผ่านก่อน commit (รันจาก `backend/`)
 
 ---
 
-## 12. Environment Variables (`.env`)
+## 12. Environment Variables (`backend/.env`)
 
 ```env
-# Database
+# Database (NexClaim's own Postgres — optional; ปัจจุบันยังไม่ต่อจริง)
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=nexclaim
 DB_USER=
 DB_PASS=
 
-# HIS
-HIS_DB_HOST=
-HIS_DB_PORT=
-HIS_DB_NAME=
-HIS_DB_USER=
-HIS_DB_PASS=
+# HIS API (OPD 2-Way) — ถ้ามีค่า server เปิดใช้ /api/v1/his/opd/batches/:id/process
+HIS_API_BASE_URL=
+HIS_API_TOKEN=            # Bearer token (หรือใช้ hisclient.WithAPIKey แทน)
 
-# FDH
+# IPD share folder — ถ้ามีค่า server เปิดใช้ /api/v1/his/ipd/*
+IPD_SHARE_ROOT=           # เช่น /shared/nexclaim/ipd (ต้องมี incoming/ processed/ error/)
+
+# FDH (ส่ง 16 แฟ้ม/CIPN/CSOP)
 FDH_BASE_URL=https://fdh.moph.go.th
 FDH_USERNAME=
 FDH_PASSWORD=
 FDH_HCODE=XXXXX
 
-# SSO (CHI)
+# SSO / CHI (ส่ง AIPN/SSOP)
 CHI_BASE_URL=https://cs8.chi.or.th
 CHI_USERNAME=
 CHI_PASSWORD=
@@ -461,16 +533,34 @@ LOG_LEVEL=info
 ## 13. Quick Start
 
 ```bash
-git clone https://github.com/nexclaim/nexclaim
+git clone https://github.com/monkeytech2017/nexclaim   # repo = monorepo (backend + frontend)
 cd nexclaim
+
+# ── Database (ครั้งแรกเท่านั้น) ──
+# สร้าง DB nexclaim พร้อม th_TH.UTF-8 collation + apply migrations 000..004
+cd backend
+PGHOST=localhost PGUSER=postgres ./scripts/init_db.sh
+
+# ── Backend ──
+cp ../.env.example .env     # แก้ credentials
 go mod tidy
 go build -o nexclaim .
+go test ./...               # ต้องผ่านก่อน commit — ปัจจุบัน 90/90 (1 PgStore skip ถ้าไม่ตั้ง DSN)
+POSTGRES_TEST_DSN="postgres://user:pass@localhost/nexclaim?sslmode=disable" go test ./tests/... # รวม PgStore contract
 
-./nexclaim server                              # HTTP mode
-./nexclaim submit --inscl UCS --period 202504 # CLI mode
-./nexclaim submit --inscl 011 --period 202504
+# CLI
+./nexclaim submit --inscl UCS --period 202504 --dry-run --hcode 12345
+./nexclaim submit --inscl 011 --period 202504 --dry-run --hcode 12345
 ./nexclaim status --txn-id <id>
-go test ./...
+
+# HTTP server (ใช้งานจริงจาก HIS หรือ frontend)
+./nexclaim server --addr :8080
+curl http://localhost:8080/healthz
+
+# ── Frontend (Next.js 14) ──
+cd ../frontend
+npm install
+npm run dev
 ```
 
 ---

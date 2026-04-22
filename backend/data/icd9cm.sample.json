@@ -1,0 +1,12 @@
+[
+  { "code": "47.0",  "name_en": "Appendectomy",                               "name_th": "ตัดไส้ติ่ง" },
+  { "code": "47.01", "name_en": "Laparoscopic appendectomy",                  "name_th": "ตัดไส้ติ่งด้วยการส่องกล้อง" },
+  { "code": "47.09", "name_en": "Other appendectomy",                         "name_th": "ตัดไส้ติ่งด้วยวิธีอื่น" },
+  { "code": "79.02", "name_en": "Closed reduction of fracture, humerus",      "name_th": "จัดกระดูกต้นแขนหักโดยไม่ต้องผ่าตัด" },
+  { "code": "79.09", "name_en": "Closed reduction of fracture, other bone",   "name_th": "จัดกระดูกหักโดยไม่ต้องผ่าตัด อื่นๆ" },
+  { "code": "88.71", "name_en": "Diagnostic ultrasound of head and neck",     "name_th": "อัลตราซาวด์บริเวณศีรษะและลำคอเพื่อการวินิจฉัย" },
+  { "code": "89.52", "name_en": "Electrocardiogram",                          "name_th": "ตรวจคลื่นไฟฟ้าหัวใจ" },
+  { "code": "93.91", "name_en": "Intermittent positive pressure breathing",    "name_th": "หายใจด้วยแรงดันบวกเป็นช่วง" },
+  { "code": "99.04", "name_en": "Transfusion of packed cells",                "name_th": "ถ่ายเลือดชนิดเม็ดเลือดแดงอัดแน่น" },
+  { "code": "99.83", "name_en": "Other phototherapy",                         "name_th": "การส่องไฟบำบัดอื่นๆ" }
+]
