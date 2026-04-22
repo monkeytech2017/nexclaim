@@ -1,5 +1,4 @@
-// API client สำหรับ NexClaim Go backend
-// Base URL ชี้ไปที่ /api/backend/* ซึ่ง next.config.js proxy ไป Go :8080
+// API client — proxied via next.config.js to Go backend at BACKEND_URL.
 
 const BASE = '/api/backend'
 
@@ -9,72 +8,210 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   })
   if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`API ${path} → ${res.status}: ${err}`)
+    let msg: string
+    try {
+      const body = await res.json()
+      msg = body.error || body.message || JSON.stringify(body)
+    } catch {
+      msg = await res.text()
+    }
+    throw new Error(`${res.status}: ${msg}`)
   }
+  if (res.status === 204) return undefined as T
   return res.json()
 }
 
-// ─── Claim Batch ──────────────────────────────────────────────
+// ── Health ──
 
-export interface ClaimBatch {
-  batch_id:      string
-  hcode:         string
-  period:        string
-  inscl:         string
-  format:        string
-  status:        string
-  total_records: number
-  valid_records: number
-  error_records: number
-  fdh_txn_id?:  string
-  deadline_at?:  string
-  created_at:    string
-  sent_at?:      string
+export interface HealthResponse { ok: boolean; service: string }
+export const health = () => request<HealthResponse>('/healthz')
+
+// ── Shared types (mirrors backend DTOs) ──
+
+export type INSCL =
+  | '011' | 'WEL' | 'LGO' | 'OFC'
+  | 'UCS' | 'NON' | 'WP1' | 'WP2'
+  | 'SSS' | 'SS4'
+  | 'TPBS' | 'WK' | 'MON' | 'PRS'
+
+export type ClaimFormat = '16FILES' | 'CIPN' | 'CSOP' | 'AIPN' | 'SSOP'
+
+export interface ValidationError {
+  field:  string
+  value?: string
+  cCode?: string
+  reason: string
 }
 
-export const claimApi = {
-  list: (params?: { period?: string; inscl?: string; status?: string }) =>
-    request<ClaimBatch[]>(`/api/claim/batch?${new URLSearchParams(params as Record<string,string>)}`),
+export interface Submission {
+  format:    ClaimFormat
+  zipName?:  string
+  zipBytes:  number
+  xmlBytes:  number
+  filesN:    number
+  txnId?:    string
+  status?:   string
+  message?:  string
+  error?:    string
+}
 
-  submit: (inscl: string, period: string, dryRun = false) =>
-    request<{ batch_id: string; txn_id: string }>('/api/claim/submit', {
+export interface SubmitResponse {
+  inscl:              string
+  opdCount:           number
+  ipdCount:           number
+  validationErrors?:  ValidationError[]
+  submissions:        Submission[] | null
+}
+
+// ── /api/submit (dev/admin direct pipeline trigger) ──
+
+export interface DirectSubmitRequest {
+  inscl:   string
+  period:  string
+  hcode?:  string
+  agency?: string
+  dryRun?: boolean
+}
+
+export const submitDirect = (body: DirectSubmitRequest) =>
+  request<SubmitResponse>('/api/submit', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+// ── /api/status/:txnId ──
+
+export interface StatusResponse { txnId: string; status: string; message: string }
+export const getStatus = (txnId: string) =>
+  request<StatusResponse>(`/api/status/${encodeURIComponent(txnId)}`)
+
+// ── OPD 2-Way: visits + batches ──
+
+export interface VisitSummary {
+  vn:            string
+  hn:            string
+  pid:           string
+  patient_name?: string
+  visit_date:    string    // YYYYMMDD ค.ศ.
+  visit_time?:   string
+  inscl:         string
+  inscl_name?:   string
+  clinic_code?:  string
+  clinic_name?:  string
+  doctor_code?:  string
+  total_charge?: number
+}
+
+export interface VisitListRequest {
+  hospital_code: string
+  period:        string
+  exported_by?:  string
+  visits:        VisitSummary[]
+}
+
+export interface VisitListResponse {
+  status:         string
+  batch_id:       string
+  received_count: number
+  message?:       string
+  created_at?:    string
+}
+
+export type BatchState = 'RECEIVED' | 'FETCHING' | 'COMPLETED' | 'FAILED'
+
+export interface Batch {
+  batch_id:      string
+  hospital_code: string
+  period:        string
+  exported_by?:  string
+  state:         BatchState
+  created_at:    string
+  updated_at:    string
+  visits:        VisitSummary[]
+  last_error?:   string
+}
+
+export interface ProcessBatchRun {
+  inscl:       string
+  vn_count:    number
+  outcome?:    SubmitResponse
+  error?:      string
+}
+
+export interface ProcessBatchResponse {
+  batchId: string
+  dryRun:  boolean
+  runs:    ProcessBatchRun[]
+}
+
+export const opdApi = {
+  pushVisits: (body: VisitListRequest) =>
+    request<VisitListResponse>('/api/v1/his/opd/visits', {
       method: 'POST',
-      body: JSON.stringify({ inscl, period, dry_run: dryRun }),
+      body: JSON.stringify(body),
     }),
 
-  status: (txnId: string) =>
-    request<{ status: string; message: string }>(`/api/claim/status/${txnId}`),
+  listBatches: () =>
+    request<{ batches: Batch[] | null }>('/api/v1/his/opd/batches'),
+
+  getBatch: (batchId: string) =>
+    request<Batch>(`/api/v1/his/opd/batches/${encodeURIComponent(batchId)}`),
+
+  processBatch: (batchId: string, dryRun = false) =>
+    request<ProcessBatchResponse>(
+      `/api/v1/his/opd/batches/${encodeURIComponent(batchId)}/process${dryRun ? '?dry_run=true' : ''}`,
+      { method: 'POST' },
+    ),
 }
 
-// ─── C-Code ───────────────────────────────────────────────────
+// ── IPD Share Folder ──
 
-export interface CCodeItem {
-  id:         string
-  batch_id:   string
-  hn:         string
-  an_or_seq:  string
-  c_code:     string
-  c_desc:     string
-  field_name: string
-  resolved:   boolean
-  received_at: string
+export interface IPDImportEntry {
+  export_id: string
+  ready:     boolean
+  path:      string
 }
 
-export const ccodeApi = {
-  list: (batchId?: string, resolved?: boolean) =>
-    request<CCodeItem[]>(`/api/ccode?${new URLSearchParams({
-      ...(batchId   ? { batch_id: batchId }        : {}),
-      ...(resolved !== undefined ? { resolved: String(resolved) } : {}),
-    })}`),
-
-  resolve: (id: string) =>
-    request<void>(`/api/ccode/${id}/resolve`, { method: 'PATCH' }),
+export interface IPDImportRun {
+  inscl:        string
+  admit_count:  number
+  outcome?:     SubmitResponse
+  error?:       string
 }
 
-// ─── Master Data ──────────────────────────────────────────────
+export interface IPDImportResult {
+  export_id:  string
+  dryRun:     boolean
+  runs:       IPDImportRun[]
+  moveError?: string
+}
 
-export const masterApi = {
-  inscl: () => request<{ inscl: string; name_th: string; format_ipd: string; format_opd: string }[]>('/api/master/inscl'),
-  chrgitem: () => request<{ code: string; name_th: string }[]>('/api/master/chrgitem'),
+export const ipdApi = {
+  listImports: () =>
+    request<{ imports: IPDImportEntry[] | null }>('/api/v1/his/ipd/imports'),
+
+  runImport: (exportId: string, dryRun = false) =>
+    request<IPDImportResult>(
+      `/api/v1/his/ipd/imports/${encodeURIComponent(exportId)}${dryRun ? '?dry_run=true' : ''}`,
+      { method: 'POST' },
+    ),
+}
+
+// ── Labels ──
+
+export const INSCL_LABELS: Record<INSCL, string> = {
+  '011':  'ข้าราชการพลเรือน',
+  'WEL':  'ลูกจ้างประจำ/บำนาญ',
+  'LGO':  'อปท.',
+  'OFC':  'หน่วยงานอิสระ',
+  'UCS':  'บัตรทอง',
+  'NON':  'ไร้สัญชาติ',
+  'WP1':  'แรงงานต่างด้าว MOU',
+  'WP2':  'แรงงานต่างด้าวขึ้นทะเบียน',
+  'SSS':  'ประกันสังคม ม.33/39',
+  'SS4':  'ประกันสังคม ม.40',
+  'TPBS': 'พ.ร.บ.รถ',
+  'WK':   'กองทุนทดแทน',
+  'MON':  'พระภิกษุ',
+  'PRS':  'ราชทัณฑ์',
 }

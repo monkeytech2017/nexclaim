@@ -66,6 +66,7 @@ func New(d Deps) *gin.Engine {
 	// OPD 2-Way endpoints (HIS → NexClaim → HIS)
 	his := r.Group("/api/v1/his")
 	his.POST("/opd/visits", receiveVisitsHandler(d))
+	his.GET("/opd/batches", listBatchesHandler(d))
 	his.GET("/opd/batches/:batchId", getBatchHandler(d))
 	his.POST("/opd/batches/:batchId/process", processBatchHandler(d))
 
@@ -251,6 +252,18 @@ func receiveVisitsHandler(d Deps) gin.HandlerFunc {
 			Message:       fmt.Sprintf("รับข้อมูล %d visits สำเร็จ", len(b.Visits)),
 			CreatedAt:     b.CreatedAt.Format(time.RFC3339),
 		})
+	}
+}
+
+// ── /api/v1/his/opd/batches (list all) ──
+
+func listBatchesHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.Batches == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "batch store not configured"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"batches": d.Batches.List()})
 	}
 }
 

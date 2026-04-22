@@ -1,64 +1,66 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import {
+  LayoutDashboard,
+  Inbox,
+  FolderDown,
+  History,
+  Send,
+} from 'lucide-react'
 
-const financeNav = [
-  { href: '/dashboard',  label: 'ภาพรวม' },
-  { href: '/claims',     label: 'ส่ง Claim' },
-  { href: '/ccode',      label: 'C-code' },
-  { href: '/reports',    label: 'รายงาน' },
-]
+const nav = [
+  { href: '/dashboard',    label: 'ภาพรวม',           icon: LayoutDashboard },
+  { href: '/opd-batches',  label: 'OPD Batches',      icon: Inbox, hint: 'HIS 2-way' },
+  { href: '/ipd-imports',  label: 'IPD Imports',      icon: FolderDown, hint: 'Share folder' },
+  { href: '/claims',       label: 'ส่ง Claim',         icon: Send, hint: 'Dev/admin' },
+  { href: '/history',      label: 'ประวัติการส่ง',     icon: History },
+] as const
 
-const adminNav = [
-  { href: '/dashboard',       label: 'ภาพรวม' },
-  { href: '/admin/master',    label: 'Master Data' },
-  { href: '/admin/mapping',   label: 'HIS Mapping' },
-  { href: '/admin/hospital',  label: 'โรงพยาบาล' },
-  { href: '/admin/logs',      label: 'System Logs' },
-]
-
-export default function Sidebar({ role = 'finance' }: { role?: 'finance' | 'admin' }) {
+export default function Sidebar() {
   const pathname = usePathname()
-  const nav = role === 'admin' ? adminNav : financeNav
 
   return (
-    <aside className="w-56 bg-white border-r border-gray-100 flex flex-col">
-      {/* Logo */}
+    <aside className="w-60 bg-white border-r border-gray-100 flex flex-col flex-shrink-0">
       <div className="px-4 py-5 flex items-center gap-3 border-b border-gray-100">
-        <div className="w-8 h-8 rounded-lg bg-[#0F172A] flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-[#185FA5] flex items-center justify-center flex-shrink-0">
           <svg width="18" height="18" viewBox="0 0 34 34" fill="none">
-            <rect x="4" y="10" width="18" height="14" rx="3" fill="#378ADD" opacity=".9"/>
-            <rect x="12" y="6" width="18" height="14" rx="3" fill="#185FA5" opacity=".7"/>
-            <path d="M8 17L13 22L22 13" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <rect x="4" y="10" width="18" height="14" rx="3" fill="#378ADD" opacity=".9" />
+            <rect x="12" y="6" width="18" height="14" rx="3" fill="#185FA5" opacity=".7" />
+            <path d="M8 17L13 22L22 13" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
-        <span className="font-semibold text-sm text-gray-900">NexClaim</span>
+        <div className="flex flex-col min-w-0">
+          <span className="font-semibold text-sm text-gray-900 leading-tight">NexClaim</span>
+          <span className="text-[10px] text-gray-400 leading-tight">Every claim, every fund — connected.</span>
+        </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-2 py-3 flex flex-col gap-0.5">
         {nav.map(item => {
           const active = pathname === item.href || pathname.startsWith(item.href + '/')
+          const Icon = item.icon
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center px-3 py-2 rounded-lg text-sm transition-colors ${
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
                 active
                   ? 'bg-primary-50 text-primary-600 font-medium'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
-              {item.label}
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1">{item.label}</span>
+              {'hint' in item && item.hint && !active && (
+                <span className="text-[10px] text-gray-400 font-normal">{item.hint}</span>
+              )}
             </Link>
           )
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-400">
-        v0.1.0
-      </div>
+      <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-400">v0.1.0</div>
     </aside>
   )
 }
