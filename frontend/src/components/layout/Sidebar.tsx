@@ -10,6 +10,8 @@ import {
   Building2,
   Stethoscope,
   ArrowRightLeft,
+  Pill,
+  UserCog,
 } from 'lucide-react'
 
 const sections = [
@@ -26,9 +28,11 @@ const sections = [
   {
     title: 'Master Data',
     items: [
-      { href: '/admin/hospitals',  label: 'โรงพยาบาล',   icon: Building2 },
-      { href: '/admin/doctors',    label: 'แพทย์',        icon: Stethoscope },
-      { href: '/admin/inscl-maps', label: 'INSCL Mapping', icon: ArrowRightLeft, hint: 'HIS→NHSO' },
+      { href: '/admin/hospitals',   label: 'โรงพยาบาล',        icon: Building2 },
+      { href: '/admin/doctors',     label: 'แพทย์',             icon: Stethoscope },
+      { href: '/admin/inscl-maps',  label: 'INSCL Mapping',     icon: ArrowRightLeft, hint: 'HIS→NHSO' },
+      { href: '/admin/drug-maps',   label: 'Drug Mapping',      icon: Pill,           hint: 'HIS→TMT' },
+      { href: '/admin/doctor-maps', label: 'Doctor Mapping',    icon: UserCog,        hint: 'HIS→DRDX' },
     ],
   },
 ] as const

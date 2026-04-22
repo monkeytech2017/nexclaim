@@ -61,6 +61,8 @@ func runServer(args []string) {
 	var hospitalRepo store.HospitalRepo
 	var doctorRepo store.DoctorRepo
 	var insclMapRepo store.InsclMapRepo
+	var drugMapRepo store.DrugMapRepo
+	var doctorMapRepo store.DoctorMapRepo
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
 			fmt.Fprintf(os.Stderr, "[NexClaim] DB connect failed, using in-memory store: %v\n", err)
@@ -70,6 +72,8 @@ func runServer(args []string) {
 			hospitalRepo = store.NewPgHospitalRepo(pg)
 			doctorRepo = store.NewPgDoctorRepo(pg)
 			insclMapRepo = store.NewPgInsclMapRepo(pg)
+			drugMapRepo = store.NewPgDrugMapRepo(pg)
+			doctorMapRepo = store.NewPgDoctorMapRepo(pg)
 			fmt.Printf("[NexClaim] postgres store wired (%s/%s)\n", cfg.DBHost, cfg.DBName)
 		}
 	}
@@ -85,10 +89,12 @@ func runServer(args []string) {
 		Batches:      batches,
 		IPDShareRoot: ipdShareRoot,
 		ClaimRepo:    claimRepo,
-		HospitalRepo: hospitalRepo,
-		DoctorRepo:   doctorRepo,
-		InsclMapRepo: insclMapRepo,
-		StatusLookup: fdh,
+		HospitalRepo:  hospitalRepo,
+		DoctorRepo:    doctorRepo,
+		InsclMapRepo:  insclMapRepo,
+		DrugMapRepo:   drugMapRepo,
+		DoctorMapRepo: doctorMapRepo,
+		StatusLookup:  fdh,
 	})
 
 	listen := *addr

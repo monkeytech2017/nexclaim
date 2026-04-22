@@ -9,9 +9,11 @@ const titles: Record<string, string> = {
   '/ipd-imports':     'IPD Imports (Share folder)',
   '/claims':          'ส่ง Claim',
   '/history':         'ประวัติการส่ง',
-  '/admin/hospitals':  'โรงพยาบาล',
-  '/admin/doctors':    'แพทย์',
-  '/admin/inscl-maps': 'INSCL Mapping (HIS PTTYPE → NHSO INSCL)',
+  '/admin/hospitals':   'โรงพยาบาล',
+  '/admin/doctors':     'แพทย์',
+  '/admin/inscl-maps':  'INSCL Mapping (HIS PTTYPE → NHSO INSCL)',
+  '/admin/drug-maps':   'Drug Mapping (HIS Drug → TMT24)',
+  '/admin/doctor-maps': 'Doctor Mapping (HIS Doctor → DRDX)',
 }
 
 function titleFor(pathname: string): string {

@@ -272,6 +272,46 @@ export const insclMapsApi = {
       { method: 'DELETE' }),
 }
 
+// ── Master data: HIS drug mapping ──
+
+export interface DrugMap {
+  id?:            string
+  hcode:          string
+  his_drug_code:  string
+  tmt_code?:      string
+  his_drug_name?: string
+  note?:          string
+  is_active:      boolean
+}
+
+export const drugMapsApi = {
+  list:   (hcode?: string) =>
+    request<{ items: DrugMap[] }>(`/api/v1/master/drug-maps${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
+  upsert: (m: DrugMap) =>
+    request<DrugMap>('/api/v1/master/drug-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (hcode: string, hisDrugCode: string) =>
+    request<void>(`/api/v1/master/drug-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(hisDrugCode)}`,
+      { method: 'DELETE' }),
+}
+
+// ── Master data: HIS doctor mapping ──
+
+export interface DoctorMap {
+  hcode:            string
+  his_doctor_code:  string
+  doctor_id?:       string
+}
+
+export const doctorMapsApi = {
+  list:   (hcode?: string) =>
+    request<{ items: DoctorMap[] }>(`/api/v1/master/doctor-maps${hcode ? `?hcode=${encodeURIComponent(hcode)}` : ''}`),
+  upsert: (m: DoctorMap) =>
+    request<DoctorMap>('/api/v1/master/doctor-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (hcode: string, hisDoctorCode: string) =>
+    request<void>(`/api/v1/master/doctor-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(hisDoctorCode)}`,
+      { method: 'DELETE' }),
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {
