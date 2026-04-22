@@ -391,6 +391,40 @@ export const fieldMapsApi = {
     }),
 }
 
+// ── Submission history (claim_batch + joined c-code counts) ──
+
+export interface ClaimBatch {
+  batch_id:      string
+  hcode:         string
+  period:        string
+  inscl:         string
+  format:        string
+  sender:        string
+  status:        string
+  total_records: number
+  valid_records: number
+  error_records: number
+  fdh_txn_id?:   string
+  zip_filename?: string
+  zip_md5?:      string
+  created_at:    string
+  sent_at?:      string
+  error_msg?:    string
+  c_code_count:  number
+  c_code_open:   number
+}
+
+export const claimBatchesApi = {
+  list: (filter: { hcode?: string; period?: string; inscl?: string; format?: string; status?: string }) => {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(filter)) if (v) qs.set(k, v)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: ClaimBatch[] }>(`/api/v1/claim/batches${suffix}`)
+  },
+  get: (id: string) =>
+    request<ClaimBatch>(`/api/v1/claim/batches/${encodeURIComponent(id)}`),
+}
+
 // ── C-code (REP feedback) ──
 
 export interface CCode {

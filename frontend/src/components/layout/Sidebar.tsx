@@ -15,6 +15,7 @@ import {
   FileCode2,
   AlertCircle,
   Columns3,
+  FileText,
 } from 'lucide-react'
 
 const sections = [
@@ -25,8 +26,9 @@ const sections = [
       { href: '/opd-batches', label: 'OPD Batches',  icon: Inbox, hint: 'HIS 2-way' },
       { href: '/ipd-imports', label: 'IPD Imports',  icon: FolderDown, hint: 'Share folder' },
       { href: '/claims',      label: 'ส่ง Claim',    icon: Send, hint: 'Dev/admin' },
-      { href: '/history',     label: 'ประวัติการส่ง', icon: History },
-      { href: '/c-codes',     label: 'C-code',       icon: AlertCircle, hint: 'REP feedback' },
+      { href: '/history',     label: 'Ingest History', icon: History, hint: 'OPD batches' },
+      { href: '/submissions', label: 'Submissions',    icon: FileText, hint: 'FDH/CHI' },
+      { href: '/c-codes',     label: 'C-code',         icon: AlertCircle, hint: 'REP feedback' },
     ],
   },
   {

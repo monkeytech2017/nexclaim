@@ -70,6 +70,7 @@ func runServer(args []string) {
 	var icdMapRepo store.IcdMapRepo
 	var fieldMapRepo store.FieldMapRepo
 	var ccodeRepo store.CCodeRepo
+	var claimBatchRepo store.ClaimBatchRepo
 	var repIngester *store.REPIngester
 	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
@@ -86,6 +87,7 @@ func runServer(args []string) {
 			icdMapRepo = store.NewPgIcdMapRepo(pg)
 			fieldMapRepo = store.NewPgFieldMapRepo(pg)
 			ccodeRepo = store.NewPgCCodeRepo(pg)
+			claimBatchRepo = store.NewPgClaimBatchRepo(pg)
 			repIngester = store.NewREPIngester(pg, ccodeRepo, fdh)
 
 			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
@@ -115,10 +117,11 @@ func runServer(args []string) {
 		DrugMapRepo:   drugMapRepo,
 		DoctorMapRepo: doctorMapRepo,
 		IcdMapRepo:    icdMapRepo,
-		FieldMapRepo:  fieldMapRepo,
-		CCodeRepo:     ccodeRepo,
-		REPIngester:   repIngester,
-		Master:        master,
+		FieldMapRepo:   fieldMapRepo,
+		CCodeRepo:      ccodeRepo,
+		ClaimBatchRepo: claimBatchRepo,
+		REPIngester:    repIngester,
+		Master:         master,
 		StatusLookup:  fdh,
 	})
 
