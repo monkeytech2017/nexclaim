@@ -12,6 +12,7 @@ import {
   ArrowRightLeft,
   Pill,
   UserCog,
+  FileCode2,
 } from 'lucide-react'
 
 const sections = [
@@ -33,6 +34,7 @@ const sections = [
       { href: '/admin/inscl-maps',  label: 'INSCL Mapping',     icon: ArrowRightLeft, hint: 'HIS→NHSO' },
       { href: '/admin/drug-maps',   label: 'Drug Mapping',      icon: Pill,           hint: 'HIS→TMT' },
       { href: '/admin/doctor-maps', label: 'Doctor Mapping',    icon: UserCog,        hint: 'HIS→DRDX' },
+      { href: '/admin/icd-maps',    label: 'ICD Mapping',       icon: FileCode2,      hint: 'HIS→WHO' },
     ],
   },
 ] as const

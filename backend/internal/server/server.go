@@ -53,6 +53,7 @@ type Deps struct {
 	InsclMapRepo  store.InsclMapRepo
 	DrugMapRepo   store.DrugMapRepo
 	DoctorMapRepo store.DoctorMapRepo
+	IcdMapRepo    store.IcdMapRepo
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
 	StatusLookup interface {
 		GetStatus(txnID string) (*sender.SubmitResult, error)
@@ -110,6 +111,10 @@ func New(d Deps) *gin.Engine {
 	master.GET("/doctor-maps", listDoctorMapsHandler(d))
 	master.POST("/doctor-maps", upsertDoctorMapHandler(d))
 	master.DELETE("/doctor-maps/:hcode/:hisDoctorCode", deleteDoctorMapHandler(d))
+
+	master.GET("/icd-maps", listIcdMapsHandler(d))
+	master.POST("/icd-maps", upsertIcdMapHandler(d))
+	master.DELETE("/icd-maps/:hcode/:icdType/:hisIcdCode", deleteIcdMapHandler(d))
 
 	return r
 }
@@ -926,6 +931,63 @@ func deleteDoctorMapHandler(d Deps) gin.HandlerFunc {
 			return
 		}
 		err := d.DoctorMapRepo.Delete(c.Request.Context(), c.Param("hcode"), c.Param("hisDoctorCode"))
+		if err == store.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
+// ── /api/v1/master/icd-maps ──
+
+func listIcdMapsHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.IcdMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "icd-map repo not configured"})
+			return
+		}
+		rows, err := d.IcdMapRepo.List(c.Request.Context(), c.Query("hcode"), c.Query("type"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": rows})
+	}
+}
+
+func upsertIcdMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.IcdMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "icd-map repo not configured"})
+			return
+		}
+		var body store.IcdMap
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		out, err := d.IcdMapRepo.Upsert(c.Request.Context(), body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, out)
+	}
+}
+
+func deleteIcdMapHandler(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.IcdMapRepo == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "icd-map repo not configured"})
+			return
+		}
+		err := d.IcdMapRepo.Delete(c.Request.Context(),
+			c.Param("hcode"), c.Param("hisIcdCode"), c.Param("icdType"))
 		if err == store.ErrNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return

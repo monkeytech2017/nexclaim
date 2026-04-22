@@ -312,6 +312,33 @@ export const doctorMapsApi = {
       { method: 'DELETE' }),
 }
 
+// ── Master data: HIS ICD mapping ──
+
+export type IcdType = '10' | '9C'
+
+export interface IcdMap {
+  hcode:        string
+  his_icd_code: string
+  icd_type:     IcdType
+  std_code:     string
+}
+
+export const icdMapsApi = {
+  list: (hcode?: string, type?: IcdType) => {
+    const qs = new URLSearchParams()
+    if (hcode) qs.set('hcode', hcode)
+    if (type)  qs.set('type', type)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: IcdMap[] }>(`/api/v1/master/icd-maps${suffix}`)
+  },
+  upsert: (m: IcdMap) =>
+    request<IcdMap>('/api/v1/master/icd-maps', { method: 'POST', body: JSON.stringify(m) }),
+  delete: (hcode: string, icdType: IcdType, hisIcdCode: string) =>
+    request<void>(
+      `/api/v1/master/icd-maps/${encodeURIComponent(hcode)}/${encodeURIComponent(icdType)}/${encodeURIComponent(hisIcdCode)}`,
+      { method: 'DELETE' }),
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {
