@@ -36,9 +36,25 @@ func TestClaimRepo_Pg(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Fresh tables so we count rows deterministically.
-	if _, err := conn.Exec(`TRUNCATE claim_record, c_code_log, send_log, claim_batch RESTART IDENTITY CASCADE`); err != nil {
-		t.Fatalf("truncate: %v — is migration 003 applied?", err)
+	// Fresh tables so we count rows deterministically. Child rows first —
+	// migration 003 doesn't declare ON DELETE CASCADE on these FKs.
+	for _, q := range []string{
+		`DELETE FROM c_code_log`,
+		`DELETE FROM send_log`,
+		`DELETE FROM claim_record`,
+		`DELETE FROM claim_batch`,
+	} {
+		if _, err := conn.Exec(q); err != nil {
+			t.Fatalf("cleanup %q: %v — is migration 003 applied?", q, err)
+		}
+	}
+	// claim_batch.hcode → m_hospital.hcode FK — must have a hospital row.
+	if _, err := conn.Exec(`
+		INSERT INTO m_hospital (hcode, name_th, is_active, created_at)
+		VALUES ('12345', 'Test Hospital', true, now())
+		ON CONFLICT (hcode) DO NOTHING
+	`); err != nil {
+		t.Fatalf("seed hospital: %v", err)
 	}
 
 	repo := store.NewPg(conn)

@@ -186,8 +186,20 @@ func TestHospitalRepo_Pg(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
-	if _, err := conn.Exec(`TRUNCATE m_hospital CASCADE`); err != nil {
-		t.Fatalf("truncate: %v — is migration 001 applied?", err)
+	// m_doctor + claim_batch both FK to m_hospital (no CASCADE). Transaction
+	// tables first, then m_doctor, then m_hospital. (If run after
+	// TestClaimRepo_Pg, claim_batch holds a row pinning hcode=12345.)
+	for _, q := range []string{
+		`DELETE FROM c_code_log`,
+		`DELETE FROM send_log`,
+		`DELETE FROM claim_record`,
+		`DELETE FROM claim_batch`,
+		`DELETE FROM m_doctor`,
+		`DELETE FROM m_hospital`,
+	} {
+		if _, err := conn.Exec(q); err != nil {
+			t.Fatalf("cleanup %q: %v — is migration 001 applied?", q, err)
+		}
 	}
 
 	repo := store.NewPgHospitalRepo(conn)

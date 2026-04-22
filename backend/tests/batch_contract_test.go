@@ -90,9 +90,10 @@ func TestBatchStore_Postgres(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Start clean so repeated runs don't collide.
-	if _, err := conn.Exec(`TRUNCATE opd_ingest_visit, opd_ingest_batch CASCADE`); err != nil {
-		t.Fatalf("truncate: %v — is migration 004 applied?", err)
+	// Start clean so repeated runs don't collide (FK CASCADE from migration 004
+	// drops visits when the batch row is deleted).
+	if _, err := conn.Exec(`DELETE FROM opd_ingest_batch`); err != nil {
+		t.Fatalf("cleanup: %v — is migration 004 applied?", err)
 	}
 
 	contractTest(t, batch.NewPostgres(conn))
