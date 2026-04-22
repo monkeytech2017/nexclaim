@@ -46,6 +46,11 @@ func (r *PgClaimRepo) SaveRun(ctx context.Context, req SaveRequest) error {
 				return fmt.Errorf("insert claim_record: %w", err)
 			}
 		}
+		if sub.Attempt != nil {
+			if err := insertSendLog(ctx, tx, batchID, sub); err != nil {
+				return fmt.Errorf("insert send_log: %w", err)
+			}
+		}
 	}
 	return tx.Commit()
 }
@@ -92,6 +97,16 @@ func insertBatch(ctx context.Context, tx *sqlx.Tx, req SaveRequest, sub pipeline
 		time.Now(), sentAt, nullIfEmpty(errMsg),
 	).Scan(&id)
 	return id, err
+}
+
+func insertSendLog(ctx context.Context, tx *sqlx.Tx, batchID string, sub pipeline.Submission) error {
+	att := sub.Attempt
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO send_log (batch_id, attempt_no, endpoint, fdh_txn_id,
+		                     response_body, duration_ms, success, error_msg, sent_at)
+		VALUES ($1, 1, $2, NULLIF($3,''), NULLIF($4,''), $5, $6, NULLIF($7,''), $8)
+	`, batchID, att.Endpoint, sub.TxnID, att.Response, att.DurationMs, att.Success, att.ErrorMsg, att.SentAt)
+	return err
 }
 
 func insertRecord(ctx context.Context, tx *sqlx.Tx, batchID, hcode string, rec record) error {

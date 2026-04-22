@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { claimBatchesApi, hospitalsApi } from '@/lib/api'
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '@/components/ui/feedback'
 import { FormatBadge, InsclBadge } from '@/components/ui/badges'
-import { RefreshCw, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
+import { RefreshCw, AlertCircle, CheckCircle2, Clock, Activity } from 'lucide-react'
 
 const FORMATS = ['', '16FILES', 'CIPN', 'CSOP', 'AIPN', 'SSOP']
 const STATUSES = ['', 'pending', 'sent', 'error']
@@ -84,6 +84,7 @@ export default function SubmissionsPage() {
                 <th className="px-4 py-2.5 text-left font-medium">TxnID</th>
                 <th className="px-4 py-2.5 text-left font-medium">C-code</th>
                 <th className="px-4 py-2.5 text-left font-medium">ZIP</th>
+                <th className="px-4 py-2.5 text-right font-medium">Log</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -119,6 +120,12 @@ export default function SubmissionsPage() {
                   <td className="px-4 py-2 font-mono text-[11px] text-gray-500 max-w-[160px] truncate" title={b.zip_filename}>
                     {b.zip_filename || '—'}
                     {b.zip_md5 && <div className="text-[10px] text-gray-400 truncate" title={b.zip_md5}>{b.zip_md5.slice(0, 12)}…</div>}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <Link href={`/send-logs?batch=${encodeURIComponent(b.batch_id)}`}
+                      className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-primary-600">
+                      <Activity className="w-3 h-3" /> log
+                    </Link>
                   </td>
                 </tr>
               ))}

@@ -8,6 +8,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/nexclaim/nexclaim/internal/extractor"
 	"github.com/nexclaim/nexclaim/internal/generator/aipn"
@@ -63,7 +64,21 @@ type Submission struct {
 	TxnID    string
 	Status   string
 	Message  string
-	Err      error // per-submission error; does not stop the rest of the run
+	Err      error    // per-submission error; does not stop the rest of the run
+	Attempt  *Attempt // populated only when a network send was actually attempted
+}
+
+// Attempt captures metadata about one outbound send. Populated by submitOne
+// even if the remote returned an error — persistence layer writes it to
+// send_log regardless of success. Nil = no network call was made (dry-run,
+// missing submitter, or build failure before zip was ready).
+type Attempt struct {
+	Endpoint   string    `json:"endpoint"`
+	DurationMs int64     `json:"durationMs"`
+	Success    bool      `json:"success"`
+	ErrorMsg   string    `json:"errorMsg,omitempty"`
+	Response   string    `json:"response,omitempty"` // truncated
+	SentAt     time.Time `json:"sentAt"`
 }
 
 // Outcome สรุปผลรวมของ pipeline run.
@@ -256,52 +271,87 @@ func submitOne(fdh FDHSubmitter, chi CHISubmitter, sub *Submission, period strin
 	if sub.Err != nil || len(sub.ZipBytes) == 0 {
 		return
 	}
+	needs := requiredSubmitter(sub.Format)
+	if needs == model.SenderFDH && fdh == nil {
+		sub.Err = fmt.Errorf("submit %s: FDH submitter not configured", sub.Format)
+		return
+	}
+	if needs == model.SenderCHI && chi == nil {
+		sub.Err = fmt.Errorf("submit %s: CHI submitter not configured", sub.Format)
+		return
+	}
+
+	att := &Attempt{Endpoint: endpointFor(sub.Format), SentAt: time.Now()}
+	start := time.Now()
+
 	var (
 		res *sender.SubmitResult
 		err error
 	)
 	switch sub.Format {
 	case model.Format16Files:
-		if fdh == nil {
-			sub.Err = fmt.Errorf("submit %s: FDH submitter not configured", sub.Format)
-			return
-		}
 		res, err = fdh.Send16Files(sub.ZipBytes, period)
 	case model.FormatCIPN:
-		if fdh == nil {
-			sub.Err = fmt.Errorf("submit %s: FDH submitter not configured", sub.Format)
-			return
-		}
 		res, err = fdh.SendCIPN(sub.ZipBytes, period)
 	case model.FormatCSOP:
-		if fdh == nil {
-			sub.Err = fmt.Errorf("submit %s: FDH submitter not configured", sub.Format)
-			return
-		}
 		res, err = fdh.SendCSOP(sub.ZipBytes, period)
 	case model.FormatAIPN:
-		if chi == nil {
-			sub.Err = fmt.Errorf("submit %s: CHI submitter not configured", sub.Format)
-			return
-		}
 		res, err = chi.SendAIPN(sub.ZipBytes, period)
 	case model.FormatSSOP:
-		if chi == nil {
-			sub.Err = fmt.Errorf("submit %s: CHI submitter not configured", sub.Format)
-			return
-		}
 		res, err = chi.SendSSOP(sub.ZipBytes, period)
 	default:
 		sub.Err = fmt.Errorf("submit: format %s not supported", sub.Format)
 		return
 	}
+	att.DurationMs = time.Since(start).Milliseconds()
+
 	if err != nil {
+		att.Success = false
+		att.ErrorMsg = truncate(err.Error(), 1024)
 		sub.Err = fmt.Errorf("submit %s: %w", sub.Format, err)
+		sub.Attempt = att
 		return
 	}
-	sub.TxnID = res.TxnID
-	sub.Status = res.Status
-	sub.Message = res.Message
+	att.Success = true
+	if res != nil {
+		att.Response = truncate(fmt.Sprintf("txnId=%s status=%s message=%s", res.TxnID, res.Status, res.Message), 1024)
+		sub.TxnID = res.TxnID
+		sub.Status = res.Status
+		sub.Message = res.Message
+	}
+	sub.Attempt = att
+}
+
+func requiredSubmitter(f model.ClaimFormat) model.Sender {
+	switch f {
+	case model.FormatAIPN, model.FormatSSOP:
+		return model.SenderCHI
+	default:
+		return model.SenderFDH
+	}
+}
+
+func endpointFor(f model.ClaimFormat) string {
+	switch f {
+	case model.Format16Files:
+		return "/api/claim/16files"
+	case model.FormatCIPN:
+		return "/api/claim/cipn"
+	case model.FormatCSOP:
+		return "/api/claim/csop"
+	case model.FormatAIPN:
+		return "/aipnupload/"
+	case model.FormatSSOP:
+		return "/ssopupload/"
+	}
+	return ""
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 func buildAIPN(opt Options, ipd []model.IPDAdmit) Submission {

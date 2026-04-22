@@ -10,6 +10,7 @@ const titles: Record<string, string> = {
   '/claims':          'ส่ง Claim',
   '/history':         'Ingest History (OPD batches ที่รับจาก HIS)',
   '/submissions':     'Submissions (claim_batch ที่ส่งไป FDH/CHI)',
+  '/send-logs':       'Send Logs (audit trail ทุกครั้งที่ส่งไป FDH/CHI)',
   '/c-codes':         'C-code (ข้อผิดพลาดจาก REP)',
   '/admin/hospitals':   'โรงพยาบาล',
   '/admin/doctors':     'แพทย์',

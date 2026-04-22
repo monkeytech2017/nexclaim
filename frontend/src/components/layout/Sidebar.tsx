@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Columns3,
   FileText,
+  Activity,
 } from 'lucide-react'
 
 const sections = [
@@ -28,6 +29,7 @@ const sections = [
       { href: '/claims',      label: 'ส่ง Claim',    icon: Send, hint: 'Dev/admin' },
       { href: '/history',     label: 'Ingest History', icon: History, hint: 'OPD batches' },
       { href: '/submissions', label: 'Submissions',    icon: FileText, hint: 'FDH/CHI' },
+      { href: '/send-logs',   label: 'Send Logs',      icon: Activity, hint: 'Audit trail' },
       { href: '/c-codes',     label: 'C-code',         icon: AlertCircle, hint: 'REP feedback' },
     ],
   },

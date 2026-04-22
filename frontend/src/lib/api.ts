@@ -471,6 +471,38 @@ export const ccodesApi = {
       { method: 'POST' }),
 }
 
+// ── Send-log audit trail (every outbound FDH/CHI attempt) ──
+
+export interface SendLog {
+  id:             string
+  batch_id:       string
+  attempt_no:     number
+  endpoint:       string
+  http_status?:   number
+  fdh_txn_id?:    string
+  response_body?: string
+  duration_ms?:   number
+  success?:       boolean
+  error_msg?:     string
+  sent_at:        string
+  hcode:          string
+  period:         string
+  inscl:          string
+  format:         string
+}
+
+export const sendLogsApi = {
+  list: (filter: { batch_id?: string; hcode?: string; period?: string; success?: 'true' | 'false' | '' }) => {
+    const qs = new URLSearchParams()
+    if (filter.batch_id) qs.set('batch_id', filter.batch_id)
+    if (filter.hcode)    qs.set('hcode', filter.hcode)
+    if (filter.period)   qs.set('period', filter.period)
+    if (filter.success)  qs.set('success', filter.success)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: SendLog[] }>(`/api/v1/send-logs${suffix}`)
+  },
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {

@@ -57,6 +57,7 @@ type Deps struct {
 	FieldMapRepo   store.FieldMapRepo
 	CCodeRepo      store.CCodeRepo
 	ClaimBatchRepo store.ClaimBatchRepo
+	SendLogRepo    store.SendLogRepo
 	REPIngester    *store.REPIngester
 	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
 	Master validator.MasterValidator
@@ -139,6 +140,9 @@ func New(d Deps) *gin.Engine {
 	// Submission history (claim_batch + joined c-code counts)
 	claim.GET("/batches", listClaimBatchesHandler(d))
 	claim.GET("/batches/:batchId", getClaimBatchHandler(d))
+
+	// Send-log audit trail (every network attempt to FDH/CHI)
+	r.GET("/api/v1/send-logs", listSendLogsHandler(d))
 
 	return r
 }
