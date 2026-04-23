@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nexclaim/nexclaim/internal/auth"
 	"github.com/nexclaim/nexclaim/internal/db"
@@ -49,7 +50,10 @@ func (m *memAuthRepo) Insert(_ context.Context, in auth.Insert) (*auth.Identity,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	id := "id-" + in.Name
-	ident := &auth.Identity{ID: id, Role: in.Role, HCode: in.HCode, Name: in.Name}
+	ident := &auth.Identity{
+		ID: id, Role: in.Role, HCode: in.HCode, Name: in.Name,
+		IsActive: true, CreatedAt: time.Now(),
+	}
 	m.byID[id] = ident
 	m.hash[in.KeyHash] = id
 	return ident, nil
@@ -59,6 +63,28 @@ func (m *memAuthRepo) Count(_ context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.byID), nil
+}
+
+func (m *memAuthRepo) List(_ context.Context) ([]auth.Identity, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]auth.Identity, 0, len(m.byID))
+	for _, ident := range m.byID {
+		out = append(out, *ident)
+	}
+	return out, nil
+}
+
+func (m *memAuthRepo) SetActive(_ context.Context, id string, active bool) (*auth.Identity, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ident, ok := m.byID[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	ident.IsActive = active
+	cp := *ident
+	return &cp, nil
 }
 
 // mint creates+inserts a key the same way the CLI would, and returns the raw

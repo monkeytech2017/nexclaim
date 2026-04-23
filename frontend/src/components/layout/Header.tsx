@@ -21,6 +21,7 @@ const titles: Record<string, string> = {
   '/admin/doctor-maps': 'Doctor Mapping (HIS Doctor → DRDX)',
   '/admin/icd-maps':    'ICD Mapping (HIS ICD → ICD-10/9CM)',
   '/admin/field-maps':  'Field Mapping (HIS column → target spec)',
+  '/admin/api-keys':    'API Keys (สำหรับ admin)',
 }
 
 function titleFor(pathname: string): string {

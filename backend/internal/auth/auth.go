@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,11 +34,17 @@ import (
 // gin.Context via c.Set(IdentityKey, ...) once Middleware accepts a request.
 //
 // HCode is empty for admin keys and non-empty for hospital keys.
+// IsActive/CreatedAt/LastUsedAt are populated for list/admin endpoints; the
+// middleware path only reads ID/Role/HCode/Name so these extra fields are a
+// harmless zero on the hot path.
 type Identity struct {
-	ID    string `json:"id"`
-	Role  string `json:"role"`
-	HCode string `json:"hcode,omitempty"`
-	Name  string `json:"name"`
+	ID         string     `json:"id"`
+	Role       string     `json:"role"`
+	HCode      string     `json:"hcode,omitempty"`
+	Name       string     `json:"name"`
+	IsActive   bool       `json:"is_active,omitempty"`
+	CreatedAt  time.Time  `json:"created_at,omitempty"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
 // Role constants — string literals match the DB CHECK constraint.
@@ -99,6 +106,13 @@ type Repo interface {
 	UpdateLastUsed(ctx context.Context, id string) error
 	Insert(ctx context.Context, in Insert) (*Identity, error)
 	Count(ctx context.Context) (int, error)
+	// List returns every api_key row (active + inactive). Used by the admin
+	// management UI; never exposes raw keys or hashes.
+	List(ctx context.Context) ([]Identity, error)
+	// SetActive flips is_active on a single row and returns the fresh
+	// Identity. Implementations return store.ErrNotFound (or an equivalent)
+	// when the id doesn't exist.
+	SetActive(ctx context.Context, id string, active bool) (*Identity, error)
 }
 
 // ── middleware ──

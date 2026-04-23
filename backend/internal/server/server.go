@@ -112,6 +112,13 @@ func New(d Deps) *gin.Engine {
 	authed := r.Group("", auth.Middleware(d.AuthRepo, d.AuthEnabled))
 	authed.GET("/api/v1/auth/whoami", whoamiHandler())
 
+	// Admin-only API-key management (create / list / deactivate).
+	// Rotation workflow: create new → deactivate old (no explicit delete).
+	keys := authed.Group("/api/v1/auth/keys", auth.RequireRole(auth.RoleAdmin))
+	keys.POST("", createAPIKeyHandler(d))
+	keys.GET("", listAPIKeysHandler(d))
+	keys.PATCH("/:id", patchAPIKeyHandler(d))
+
 	// Admin-only: pipeline trigger + FDH status forward.
 	adminAPI := authed.Group("/api", auth.RequireRole(auth.RoleAdmin))
 	adminAPI.POST("/submit", submitHandler(d))

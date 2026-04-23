@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
@@ -20,10 +21,27 @@ func NewPgAPIKeyRepo(db *sqlx.DB) *PgAPIKeyRepo { return &PgAPIKeyRepo{db: db} }
 // apiKeyRow is the internal scan target. We project COALESCE(hcode,'') so
 // admin rows (hcode NULL) map cleanly to the empty string in auth.Identity.
 type apiKeyRow struct {
-	ID    string `db:"id"`
-	Role  string `db:"role"`
-	HCode string `db:"hcode"`
-	Name  string `db:"name"`
+	ID         string       `db:"id"`
+	Role       string       `db:"role"`
+	HCode      string       `db:"hcode"`
+	Name       string       `db:"name"`
+	IsActive   bool         `db:"is_active"`
+	CreatedAt  time.Time    `db:"created_at"`
+	LastUsedAt sql.NullTime `db:"last_used_at"`
+}
+
+// toIdentity projects an apiKeyRow into the domain Identity. last_used_at is
+// NULL for never-used keys — expose it as nil in the DTO so JSON omits the key.
+func (r apiKeyRow) toIdentity() *auth.Identity {
+	ident := &auth.Identity{
+		ID: r.ID, Role: r.Role, HCode: r.HCode, Name: r.Name,
+		IsActive: r.IsActive, CreatedAt: r.CreatedAt,
+	}
+	if r.LastUsedAt.Valid {
+		t := r.LastUsedAt.Time
+		ident.LastUsedAt = &t
+	}
+	return ident
 }
 
 func (r *PgAPIKeyRepo) GetByHash(ctx context.Context, hash string) (*auth.Identity, error) {
@@ -32,7 +50,10 @@ func (r *PgAPIKeyRepo) GetByHash(ctx context.Context, hash string) (*auth.Identi
 		SELECT id::text        AS id,
 		       role,
 		       COALESCE(hcode,'') AS hcode,
-		       name
+		       name,
+		       is_active,
+		       created_at,
+		       last_used_at
 		FROM api_key
 		WHERE key_hash = $1 AND is_active = true
 	`, hash)
@@ -42,9 +63,7 @@ func (r *PgAPIKeyRepo) GetByHash(ctx context.Context, hash string) (*auth.Identi
 	if err != nil {
 		return nil, fmt.Errorf("api_key get: %w", err)
 	}
-	return &auth.Identity{
-		ID: row.ID, Role: row.Role, HCode: row.HCode, Name: row.Name,
-	}, nil
+	return row.toIdentity(), nil
 }
 
 func (r *PgAPIKeyRepo) UpdateLastUsed(ctx context.Context, id string) error {
@@ -78,18 +97,73 @@ func (r *PgAPIKeyRepo) Insert(ctx context.Context, in auth.Insert) (*auth.Identi
 
 	// Insert with NULLIF so an empty hcode becomes NULL (matches the
 	// role-admin case; the CHECK constraint would otherwise reject).
-	var id string
+	var row apiKeyRow
 	err := r.db.QueryRowxContext(ctx, `
 		INSERT INTO api_key (key_hash, role, hcode, name, is_active)
 		VALUES ($1, $2, NULLIF($3,''), $4, true)
-		RETURNING id::text
-	`, in.KeyHash, in.Role, in.HCode, in.Name).Scan(&id)
+		RETURNING id::text,
+		          role,
+		          COALESCE(hcode,'') AS hcode,
+		          name,
+		          is_active,
+		          created_at,
+		          last_used_at
+	`, in.KeyHash, in.Role, in.HCode, in.Name).StructScan(&row)
 	if err != nil {
 		return nil, fmt.Errorf("api_key insert: %w", err)
 	}
-	return &auth.Identity{
-		ID: id, Role: in.Role, HCode: in.HCode, Name: in.Name,
-	}, nil
+	return row.toIdentity(), nil
+}
+
+// List returns every api_key row (admin sees all — active + inactive),
+// newest-first by created_at. Never includes key_hash or the raw key.
+func (r *PgAPIKeyRepo) List(ctx context.Context) ([]auth.Identity, error) {
+	var rows []apiKeyRow
+	err := r.db.SelectContext(ctx, &rows, `
+		SELECT id::text          AS id,
+		       role,
+		       COALESCE(hcode,'') AS hcode,
+		       name,
+		       is_active,
+		       created_at,
+		       last_used_at
+		FROM api_key
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("api_key list: %w", err)
+	}
+	out := make([]auth.Identity, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, *row.toIdentity())
+	}
+	return out, nil
+}
+
+// SetActive flips is_active on a single id and returns the fresh Identity.
+// Uses a single UPDATE ... RETURNING (no separate SELECT needed); empty
+// result → ErrNotFound so the HTTP layer can map to 404.
+func (r *PgAPIKeyRepo) SetActive(ctx context.Context, id string, active bool) (*auth.Identity, error) {
+	var row apiKeyRow
+	err := r.db.QueryRowxContext(ctx, `
+		UPDATE api_key
+		   SET is_active = $2
+		 WHERE id = $1::uuid
+		RETURNING id::text,
+		          role,
+		          COALESCE(hcode,'') AS hcode,
+		          name,
+		          is_active,
+		          created_at,
+		          last_used_at
+	`, id, active).StructScan(&row)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("api_key set_active: %w", err)
+	}
+	return row.toIdentity(), nil
 }
 
 func (r *PgAPIKeyRepo) Count(ctx context.Context) (int, error) {

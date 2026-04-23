@@ -159,6 +159,32 @@ export const authApi = {
   whoami: () => request<Identity>('/api/v1/auth/whoami'),
 }
 
+// ── API keys (admin-only management) ──
+
+export interface APIKey {
+  id:            string
+  name:          string
+  role:          'admin' | 'hospital'
+  hcode?:        string
+  is_active:     boolean
+  created_at:    string
+  last_used_at?: string
+}
+
+export interface APIKeyCreateResponse extends APIKey {
+  raw_key: string   // populated ONLY on POST response — shown to user once
+}
+
+export const apiKeysApi = {
+  list:       () => request<{ items: APIKey[] }>('/api/v1/auth/keys'),
+  create:     (body: { role: 'admin' | 'hospital'; hcode?: string; name: string }) =>
+                request<APIKeyCreateResponse>('/api/v1/auth/keys', { method: 'POST', body: JSON.stringify(body) }),
+  setActive:  (id: string, is_active: boolean) =>
+                request<APIKey>(`/api/v1/auth/keys/${encodeURIComponent(id)}`, {
+                  method: 'PATCH', body: JSON.stringify({ is_active }),
+                }),
+}
+
 // ── OPD 2-Way: visits + batches ──
 
 export interface VisitSummary {
