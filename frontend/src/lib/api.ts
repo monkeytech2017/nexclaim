@@ -545,6 +545,8 @@ export interface ClaimBatch {
   inscl:         string
   format:        string
   sender:        string
+  // status values: 'pending' | 'sent' | 'error' | 'failed'
+  // 'failed' is a terminal state reached after max_attempts retries.
   status:        string
   total_records: number
   valid_records: number
@@ -557,6 +559,10 @@ export interface ClaimBatch {
   error_msg?:    string
   c_code_count:  number
   c_code_open:   number
+  // attempt_no = count of send attempts so far (1 = initial run, 2+ = retries).
+  attempt_no:    number
+  // next_retry_at populated while the retry worker still owns the batch.
+  next_retry_at?: string
 }
 
 export const claimBatchesApi = {

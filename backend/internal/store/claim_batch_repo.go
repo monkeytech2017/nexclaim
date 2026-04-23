@@ -32,6 +32,9 @@ type ClaimBatchRow struct {
 	ErrorMsg      string       `db:"error_msg"      json:"error_msg,omitempty"`
 	CCodeCount    int          `db:"c_code_count"   json:"c_code_count"` // 0 until REP ingested
 	CCodeOpen     int          `db:"c_code_open"    json:"c_code_open"`  // unresolved only
+	AttemptNo     int          `db:"attempt_no"     json:"attempt_no"`   // # of send attempts so far (>=1)
+	NextRetryAt   sql.NullTime `db:"next_retry_at"  json:"-"`
+	NextRetryAtJS *time.Time   `db:"-"              json:"next_retry_at,omitempty"`
 }
 
 // ClaimBatchFilter — all fields optional, AND-combined.
@@ -65,7 +68,9 @@ const claimBatchBaseSelect = `
 		cb.created_at, cb.sent_at,
 		COALESCE(cb.error_msg,'')    AS error_msg,
 		COALESCE(cc.total, 0)        AS c_code_count,
-		COALESCE(cc.open,  0)        AS c_code_open
+		COALESCE(cc.open,  0)        AS c_code_open,
+		cb.attempt_no,
+		cb.next_retry_at
 	FROM claim_batch cb
 	LEFT JOIN (
 		SELECT batch_id,
@@ -118,6 +123,10 @@ func (r *PgClaimBatchRepo) List(ctx context.Context, f ClaimBatchFilter) ([]Clai
 			t := rows[i].SentAt.Time
 			rows[i].SentAtJSON = &t
 		}
+		if rows[i].NextRetryAt.Valid {
+			t := rows[i].NextRetryAt.Time
+			rows[i].NextRetryAtJS = &t
+		}
 	}
 	return rows, nil
 }
@@ -134,6 +143,10 @@ func (r *PgClaimBatchRepo) Get(ctx context.Context, batchID string) (*ClaimBatch
 	if row.SentAt.Valid {
 		t := row.SentAt.Time
 		row.SentAtJSON = &t
+	}
+	if row.NextRetryAt.Valid {
+		t := row.NextRetryAt.Time
+		row.NextRetryAtJS = &t
 	}
 	return &row, nil
 }

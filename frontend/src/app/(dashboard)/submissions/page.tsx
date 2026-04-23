@@ -9,7 +9,7 @@ import { FormatBadge, InsclBadge } from '@/components/ui/badges'
 import { RefreshCw, AlertCircle, CheckCircle2, Clock, Activity } from 'lucide-react'
 
 const FORMATS = ['', '16FILES', 'CIPN', 'CSOP', 'AIPN', 'SSOP']
-const STATUSES = ['', 'pending', 'sent', 'error']
+const STATUSES = ['', 'pending', 'sent', 'error', 'failed']
 
 export default function SubmissionsPage() {
   const identity = useIdentity()
@@ -86,6 +86,7 @@ export default function SubmissionsPage() {
                 <th className="px-4 py-2.5 text-left font-medium">Sender</th>
                 <th className="px-4 py-2.5 text-right font-medium">Records</th>
                 <th className="px-4 py-2.5 text-left font-medium">Status</th>
+                <th className="px-4 py-2.5 text-left font-medium">ครั้งที่</th>
                 <th className="px-4 py-2.5 text-left font-medium">TxnID</th>
                 <th className="px-4 py-2.5 text-left font-medium">C-code</th>
                 <th className="px-4 py-2.5 text-left font-medium">ZIP</th>
@@ -108,6 +109,13 @@ export default function SubmissionsPage() {
                     {b.error_records > 0 && <span className="ml-1 text-amber-700">({b.error_records}✗)</span>}
                   </td>
                   <td className="px-4 py-2"><StatusPill status={b.status} /></td>
+                  <td className="px-4 py-2 text-xs">
+                    {b.attempt_no > 1 ? (
+                      <span className="font-mono text-gray-500" title={`attempt ${b.attempt_no}`}>#{b.attempt_no}</span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 font-mono text-[11px] text-gray-700 max-w-[140px] truncate" title={b.fdh_txn_id}>
                     {b.fdh_txn_id || '—'}
                   </td>
@@ -161,6 +169,8 @@ function StatusPill({ status }: { status: string }) {
     sent:    { label: 'sent',    cls: 'bg-green-50 text-green-700', icon: CheckCircle2 },
     pending: { label: 'pending', cls: 'bg-gray-100 text-gray-600',  icon: Clock },
     error:   { label: 'error',   cls: 'bg-red-50 text-red-700',     icon: AlertCircle },
+    // 'failed' = gave up after max retries. Distinct from 'error' (still retriable).
+    failed:  { label: 'ล้มเหลว (ให้ admin ดู)', cls: 'bg-red-100 text-red-800 ring-1 ring-red-200', icon: AlertCircle },
   }
   const s = map[status] ?? { label: status, cls: 'bg-gray-100 text-gray-600' }
   const Icon = s.icon

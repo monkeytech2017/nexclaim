@@ -19,6 +19,7 @@ import (
 	"github.com/nexclaim/nexclaim/internal/extractor"
 	"github.com/nexclaim/nexclaim/internal/hisclient"
 	"github.com/nexclaim/nexclaim/internal/ipdimport"
+	"github.com/nexclaim/nexclaim/internal/retry"
 	"github.com/nexclaim/nexclaim/internal/sender"
 	"github.com/nexclaim/nexclaim/internal/server"
 	"github.com/nexclaim/nexclaim/internal/store"
@@ -80,6 +81,7 @@ func runServer(args []string) {
 	var authRepo auth.Repo
 	var auditRepo store.AuditRepo
 	var auditWriter audit.Writer = audit.NoopWriter{}
+	var retryRepo store.RetryRepo
 	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
@@ -103,6 +105,7 @@ func runServer(args []string) {
 			pgAudit := store.NewPgAuditRepo(pg)
 			auditRepo = pgAudit
 			auditWriter = pgAudit
+			retryRepo = store.NewPgRetryRepo(pg)
 
 			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
 				fmt.Fprintf(os.Stderr, "[NexClaim] master validator load failed, falling back to noop: %v\n", err)
@@ -176,6 +179,23 @@ func runServer(args []string) {
 			}
 			go (&watcher.IPD{Proc: proc, Interval: interval}).Run(context.Background())
 		}
+	}
+
+	// Send retry worker: OPT-IN via RETRY_WORKER_ENABLED=true. Requires a
+	// DB-backed retry repo — no-op otherwise. Default-off preserves the
+	// current behaviour (operators re-trigger error'd batches manually) and
+	// lets ops roll the loop out gradually.
+	if os.Getenv("RETRY_WORKER_ENABLED") == "true" && retryRepo != nil {
+		worker := &retry.Worker{
+			Repo:        retryRepo,
+			FDH:         fdh,
+			CHI:         chi,
+			MaxAttempts: 5,
+			Interval:    30 * time.Second,
+			AuditWriter: auditWriter,
+		}
+		go worker.Run(context.Background())
+		fmt.Printf("[NexClaim] retry worker enabled (max=5, interval=30s)\n")
 	}
 
 	listen := *addr

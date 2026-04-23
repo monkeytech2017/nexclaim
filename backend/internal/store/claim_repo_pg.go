@@ -80,14 +80,29 @@ func insertBatch(ctx context.Context, tx *sqlx.Tx, req SaveRequest, sub pipeline
 		valid = 0
 	}
 
+	// Persist zip_bytes so the retry worker can re-send without rebuilding
+	// the pipeline. NULL when no bytes were produced (build failure, dry-run).
+	var zipBytes any
+	if len(sub.ZipBytes) > 0 {
+		zipBytes = sub.ZipBytes
+	}
+	// Schedule the first retry ~1 minute out when the initial submit failed.
+	// attempt_no defaults to 1 (the attempt we just recorded, whether the
+	// attempt row is in send_log yet or not).
+	var nextRetryAt any
+	if status == "error" && len(sub.ZipBytes) > 0 {
+		nextRetryAt = time.Now().Add(1 * time.Minute)
+	}
+
 	var id string
 	err := tx.QueryRowxContext(ctx, `
 		INSERT INTO claim_batch
 		  (hcode, period, inscl, format, sender, status,
 		   total_records, valid_records, error_records,
 		   fdh_txn_id, zip_filename, zip_md5,
-		   created_at, sent_at, error_msg)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		   created_at, sent_at, error_msg,
+		   zip_bytes, attempt_no, next_retry_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,1,$17)
 		RETURNING batch_id
 	`,
 		req.HCode, req.Period, string(req.Outcome.INSCL),
@@ -95,6 +110,7 @@ func insertBatch(ctx context.Context, tx *sqlx.Tx, req SaveRequest, sub pipeline
 		status, total, valid, validationErrs,
 		txnID, zipName, md5Hex,
 		time.Now(), sentAt, nullIfEmpty(errMsg),
+		zipBytes, nextRetryAt,
 	).Scan(&id)
 	return id, err
 }
