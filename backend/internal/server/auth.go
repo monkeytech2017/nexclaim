@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexclaim/nexclaim/internal/audit"
 	"github.com/nexclaim/nexclaim/internal/auth"
 	"github.com/nexclaim/nexclaim/internal/store"
 )
@@ -64,6 +65,20 @@ func bootstrapHandler(d Deps) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		// Audit: api_key.bootstrap — the only API-key event that has no
+		// authenticated actor, so we stamp it as actor_role=system.
+		writeAudit(c.Request.Context(), d, audit.Entry{
+			ActorRole:  "system",
+			ActorName:  "bootstrap",
+			Action:     "api_key.bootstrap",
+			TargetKind: "api_key",
+			TargetID:   ident.ID,
+			Payload: map[string]any{
+				"role": ident.Role,
+				"name": ident.Name,
+			},
+		})
+
 		c.JSON(http.StatusCreated, gin.H{
 			"id":   ident.ID,
 			"name": ident.Name,

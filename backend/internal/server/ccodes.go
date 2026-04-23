@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexclaim/nexclaim/internal/audit"
 	"github.com/nexclaim/nexclaim/internal/store"
 )
 
@@ -22,6 +23,25 @@ func fetchREPHandler(d Deps) gin.HandlerFunc {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Audit: rep.fetch — logged AFTER ingest succeeds.
+		actorRole, actorName, aid := audit.ActorFromContext(c)
+		writeAudit(c.Request.Context(), d, audit.Entry{
+			ActorID:    aid,
+			ActorRole:  actorRole,
+			ActorName:  actorName,
+			Action:     "rep.fetch",
+			TargetKind: "rep",
+			TargetID:   hcode + "/" + period,
+			HCode:      hcode,
+			Payload: map[string]any{
+				"fetched":  res.Fetched,
+				"inserted": res.Inserted,
+				"skipped":  res.Skipped,
+				"errors":   res.Errors,
+			},
+		})
+
 		c.JSON(http.StatusOK, res)
 	}
 }
@@ -67,7 +87,8 @@ func resolveCCodeHandler(d Deps) gin.HandlerFunc {
 			ResolvedBy string `json:"resolved_by"`
 		}
 		_ = c.ShouldBindJSON(&body)
-		err := d.CCodeRepo.Resolve(c.Request.Context(), c.Param("id"), body.ResolvedBy)
+		id := c.Param("id")
+		err := d.CCodeRepo.Resolve(c.Request.Context(), id, body.ResolvedBy)
 		if err == store.ErrNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found or already resolved"})
 			return
@@ -76,6 +97,24 @@ func resolveCCodeHandler(d Deps) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Audit: ccode.resolve — scoped by the c-code's hospital (resolver
+		// already returns "" when unknown, so we tolerate an empty hcode).
+		hcode, _ := d.CCodeRepo.GetHcode(c.Request.Context(), id)
+		actorRole, actorName, aid := audit.ActorFromContext(c)
+		writeAudit(c.Request.Context(), d, audit.Entry{
+			ActorID:    aid,
+			ActorRole:  actorRole,
+			ActorName:  actorName,
+			Action:     "ccode.resolve",
+			TargetKind: "ccode",
+			TargetID:   id,
+			HCode:      hcode,
+			Payload: map[string]any{
+				"resolved_by": body.ResolvedBy,
+			},
+		})
+
 		c.Status(http.StatusNoContent)
 	}
 }

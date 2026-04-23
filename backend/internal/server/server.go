@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexclaim/nexclaim/internal/audit"
 	"github.com/nexclaim/nexclaim/internal/auth"
 	"github.com/nexclaim/nexclaim/internal/batch"
 	"github.com/nexclaim/nexclaim/internal/extractor"
@@ -65,6 +66,13 @@ type Deps struct {
 	SendLogRepo    store.SendLogRepo
 	DashboardRepo  store.DashboardRepo
 	REPIngester    *store.REPIngester
+	// AuditRepo backs GET /api/v1/audit-log (admin-only read).
+	// Nil = endpoint returns 503; handlers still try AuditWriter best-effort.
+	AuditRepo store.AuditRepo
+	// AuditWriter is the sink every instrumented handler writes to AFTER the
+	// action succeeds. Typically equal to AuditRepo (PgAuditRepo satisfies
+	// both). Nil falls back to audit.NoopWriter so tests/dev don't panic.
+	AuditWriter audit.Writer
 	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
 	Master validator.MasterValidator
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
@@ -123,6 +131,10 @@ func New(d Deps) *gin.Engine {
 	adminAPI := authed.Group("/api", auth.RequireRole(auth.RoleAdmin))
 	adminAPI.POST("/submit", submitHandler(d))
 	adminAPI.GET("/status/:txnId", statusHandler(d))
+
+	// Admin-only: audit log read endpoint. Writers are the instrumented
+	// handlers themselves (best-effort, via d.AuditWriter).
+	authed.GET("/api/v1/audit-log", auth.RequireRole(auth.RoleAdmin), listAuditLogHandler(d))
 
 	// Hospital-scoped group: HIS endpoints. Path :hcode matches via
 	// RequireHcodeMatch; batchId-scoped routes resolve hcode from the repo.
@@ -1005,6 +1017,21 @@ func deleteIcdMapHandler(d Deps) gin.HandlerFunc {
 			return
 		}
 		c.Status(http.StatusNoContent)
+	}
+}
+
+// writeAudit is the best-effort audit sink used by instrumented handlers.
+// Errors are logged to stderr + swallowed — mirrors persistRun below, so
+// the originating action's HTTP response is never blocked by audit failure.
+// Falls back to NoopWriter when no writer is wired (tests, dev-without-DB).
+func writeAudit(ctx context.Context, d Deps, entry audit.Entry) {
+	w := d.AuditWriter
+	if w == nil {
+		return
+	}
+	if err := w.Write(ctx, entry); err != nil {
+		fmt.Fprintf(os.Stderr, "[NexClaim] audit write: action=%s target=%s/%s: %v\n",
+			entry.Action, entry.TargetKind, entry.TargetID, err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/nexclaim/nexclaim/internal/audit"
 	"github.com/nexclaim/nexclaim/internal/auth"
 	"github.com/nexclaim/nexclaim/internal/batch"
 	"github.com/nexclaim/nexclaim/internal/config"
@@ -76,6 +77,8 @@ func runServer(args []string) {
 	var dashboardRepo store.DashboardRepo
 	var repIngester *store.REPIngester
 	var authRepo auth.Repo
+	var auditRepo store.AuditRepo
+	var auditWriter audit.Writer = audit.NoopWriter{}
 	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
@@ -96,6 +99,9 @@ func runServer(args []string) {
 			dashboardRepo = store.NewPgDashboardRepo(pg)
 			repIngester = store.NewREPIngester(pg, ccodeRepo, fdh)
 			authRepo = store.NewPgAPIKeyRepo(pg)
+			pgAudit := store.NewPgAuditRepo(pg)
+			auditRepo = pgAudit
+			auditWriter = pgAudit
 
 			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
 				fmt.Fprintf(os.Stderr, "[NexClaim] master validator load failed, falling back to noop: %v\n", err)
@@ -137,6 +143,8 @@ func runServer(args []string) {
 		SendLogRepo:    sendLogRepo,
 		DashboardRepo:  dashboardRepo,
 		REPIngester:    repIngester,
+		AuditRepo:      auditRepo,
+		AuditWriter:    auditWriter,
 		Master:         master,
 		StatusLookup:  fdh,
 	})

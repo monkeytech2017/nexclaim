@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexclaim/nexclaim/internal/audit"
 	"github.com/nexclaim/nexclaim/internal/auth"
 	"github.com/nexclaim/nexclaim/internal/store"
 )
@@ -115,6 +116,23 @@ func createAPIKeyHandler(d Deps) gin.HandlerFunc {
 			"[NexClaim] api_key mint: id=%s role=%s hcode=%q name=%q actor_id=%s\n",
 			ident.ID, ident.Role, ident.HCode, ident.Name, actorID)
 
+		// Audit: api_key.create — payload CAREFULLY excludes the raw key + hash.
+		actorRole, actorName, aid := audit.ActorFromContext(c)
+		writeAudit(c.Request.Context(), d, audit.Entry{
+			ActorID:    aid,
+			ActorRole:  actorRole,
+			ActorName:  actorName,
+			Action:     "api_key.create",
+			TargetKind: "api_key",
+			TargetID:   ident.ID,
+			HCode:      ident.HCode,
+			Payload: map[string]any{
+				"role":  ident.Role,
+				"hcode": ident.HCode,
+				"name":  ident.Name,
+			},
+		})
+
 		dto := toAPIKeyDTO(ident)
 		dto.RawKey = raw
 		c.JSON(http.StatusOK, dto)
@@ -183,6 +201,18 @@ func patchAPIKeyHandler(d Deps) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "is_active required"})
 			return
 		}
+		// Best-effort pre-read so audit can record prev_is_active. List is
+		// bounded + this path is admin-only + low-throughput, so the extra
+		// round-trip is acceptable vs. extending the Repo interface.
+		prevActive := !*req.IsActive // safe default if lookup misses
+		if existing, err := d.AuthRepo.List(c.Request.Context()); err == nil {
+			for i := range existing {
+				if existing[i].ID == id {
+					prevActive = existing[i].IsActive
+					break
+				}
+			}
+		}
 		ident, err := d.AuthRepo.SetActive(c.Request.Context(), id, *req.IsActive)
 		if errors.Is(err, store.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "api key not found"})
@@ -192,6 +222,27 @@ func patchAPIKeyHandler(d Deps) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Audit: api_key.activate / api_key.deactivate.
+		action := "api_key.activate"
+		if !ident.IsActive {
+			action = "api_key.deactivate"
+		}
+		actorRole, actorName, aid := audit.ActorFromContext(c)
+		writeAudit(c.Request.Context(), d, audit.Entry{
+			ActorID:    aid,
+			ActorRole:  actorRole,
+			ActorName:  actorName,
+			Action:     action,
+			TargetKind: "api_key",
+			TargetID:   ident.ID,
+			HCode:      ident.HCode,
+			Payload: map[string]any{
+				"prev_is_active": prevActive,
+				"next_is_active": ident.IsActive,
+			},
+		})
+
 		c.JSON(http.StatusOK, toAPIKeyDTO(ident))
 	}
 }

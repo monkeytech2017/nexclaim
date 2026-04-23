@@ -185,6 +185,46 @@ export const apiKeysApi = {
                 }),
 }
 
+// ── Audit log (admin-only, append-only) ──
+
+export interface AuditEntry {
+  id:           string
+  actor_id?:    string
+  actor_role?:  string
+  actor_name?:  string
+  action:       string
+  target_kind?: string
+  target_id?:   string
+  hcode?:       string
+  payload?:     Record<string, unknown>
+  created_at:   string
+}
+
+export const auditApi = {
+  list: (filter: {
+    action?:       string
+    actor_id?:     string
+    hcode?:        string
+    target_kind?:  string
+    target_id?:    string
+    from?:         string
+    to?:           string
+    limit?:        number
+  }) => {
+    const qs = new URLSearchParams()
+    if (filter.action)      qs.set('action', filter.action)
+    if (filter.actor_id)    qs.set('actor_id', filter.actor_id)
+    if (filter.hcode)       qs.set('hcode', filter.hcode)
+    if (filter.target_kind) qs.set('target_kind', filter.target_kind)
+    if (filter.target_id)   qs.set('target_id', filter.target_id)
+    if (filter.from)        qs.set('from', filter.from)
+    if (filter.to)          qs.set('to', filter.to)
+    if (filter.limit)       qs.set('limit', String(filter.limit))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: AuditEntry[] }>(`/api/v1/audit-log${suffix}`)
+  },
+}
+
 // ── OPD 2-Way: visits + batches ──
 
 export interface VisitSummary {

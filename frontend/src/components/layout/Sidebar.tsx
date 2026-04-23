@@ -18,6 +18,7 @@ import {
   FileText,
   Activity,
   KeyRound,
+  ScrollText,
 } from 'lucide-react'
 import { useIdentity, useIsAdmin } from '@/lib/auth-context'
 
@@ -60,6 +61,7 @@ const sections: SidebarSection[] = [
       { href: '/admin/icd-maps',    label: 'ICD Mapping',       icon: FileCode2,      hint: 'HIS→WHO' },
       { href: '/admin/field-maps',  label: 'Field Mapping',     icon: Columns3,       hint: 'HIS col→spec' },
       { href: '/admin/api-keys',    label: 'API Keys',          icon: KeyRound,       hint: 'Admin only' },
+      { href: '/admin/audit-log',   label: 'Audit Log',         icon: ScrollText,     hint: 'Admin only' },
     ],
   },
 ]

@@ -44,6 +44,16 @@ BEGIN
 END
 $grants$;
 
+-- audit_log is append-only: SELECT + INSERT only. No UPDATE/DELETE even for
+-- the app role — tamper-resistance for the audit trail.
+DO $audit$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='audit_log') THEN
+        EXECUTE format('GRANT SELECT, INSERT ON public.audit_log TO %I', :'role');
+    END IF;
+END
+$audit$;
+
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES    TO :"role";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
