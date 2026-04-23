@@ -213,6 +213,11 @@ export default function DashboardPage() {
                         innerRadius={60}
                         outerRadius={95}
                         paddingAngle={2}
+                        style={{ cursor: 'pointer' }}
+                        onClick={(data: { payload?: { status?: string }; status?: string }) => {
+                          const status = data?.payload?.status ?? data?.status
+                          if (status) router.push(`/submissions?status=${encodeURIComponent(status)}`)
+                        }}
                       >
                         {stats.data!.by_status.map(entry => (
                           <Cell

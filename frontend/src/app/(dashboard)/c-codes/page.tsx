@@ -20,13 +20,14 @@ function CCodesContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const batchFromURL = searchParams.get('batch') ?? ''
+  const codeFromURL = searchParams.get('c_code') ?? ''
 
   const identity = useIdentity()
   const isHospital = identity?.role === 'hospital'
   const [filterHcode, setFilterHcode] = useState(isHospital ? identity.hcode ?? '' : '')
   const [filterPeriod, setFilterPeriod] = useState('')
   const [filterResolved, setFilterResolved] = useState<'' | 'true' | 'false'>('false')
-  const [filterCode, setFilterCode] = useState('')
+  const [filterCode, setFilterCode] = useState(codeFromURL)
 
   const hospitals = useQuery({ queryKey: ['hospitals'], queryFn: hospitalsApi.list })
   const list = useQuery({

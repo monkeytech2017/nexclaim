@@ -1,6 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { claimBatchesApi, hospitalsApi } from '@/lib/api'
 import { useIdentity } from '@/lib/auth-context'
@@ -12,13 +13,28 @@ const FORMATS = ['', '16FILES', 'CIPN', 'CSOP', 'AIPN', 'SSOP']
 const STATUSES = ['', 'pending', 'sent', 'error', 'failed']
 
 export default function SubmissionsPage() {
+  return (
+    <Suspense fallback={<LoadingBlock />}>
+      <SubmissionsContent />
+    </Suspense>
+  )
+}
+
+function SubmissionsContent() {
+  const searchParams = useSearchParams()
+  const hcodeParam = searchParams.get('hcode') ?? ''
+  const periodParam = searchParams.get('period') ?? ''
+  const insclParam = searchParams.get('inscl') ?? ''
+  const formatParam = searchParams.get('format') ?? ''
+  const statusParam = searchParams.get('status') ?? ''
+
   const identity = useIdentity()
   const isHospital = identity?.role === 'hospital'
-  const [hcode, setHcode] = useState(isHospital ? identity.hcode ?? '' : '')
-  const [period, setPeriod] = useState('')
-  const [inscl, setInscl] = useState('')
-  const [format, setFormat] = useState('')
-  const [status, setStatus] = useState('')
+  const [hcode, setHcode] = useState(isHospital ? identity.hcode ?? '' : hcodeParam)
+  const [period, setPeriod] = useState(periodParam)
+  const [inscl, setInscl] = useState(insclParam)
+  const [format, setFormat] = useState(formatParam)
+  const [status, setStatus] = useState(statusParam)
 
   const hospitals = useQuery({ queryKey: ['hospitals'], queryFn: hospitalsApi.list })
   const list = useQuery({
