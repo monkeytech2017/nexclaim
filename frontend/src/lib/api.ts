@@ -21,9 +21,41 @@ export class ScopeError extends Error {
   }
 }
 
+// ── API key storage (browser localStorage) ──
+// Primary: key stored via login page. Fallback: NEXT_PUBLIC_API_KEY env (DEV only).
+
+const API_KEY_STORAGE = 'nexclaim.apiKey'
+
+export const storedApiKey = (): string | null => {
+  if (typeof window === 'undefined') return null
+  try {
+    const v = localStorage.getItem(API_KEY_STORAGE)
+    return v && v.length > 0 ? v : null
+  } catch {
+    return null
+  }
+}
+
+export const setApiKey = (key: string): void => {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(API_KEY_STORAGE, key)
+}
+
+export const clearApiKey = (): void => {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(API_KEY_STORAGE)
+  } catch {
+    // ignore — private-mode browsers may throw
+  }
+}
+
 function authHeader(): Record<string, string> {
-  const key = process.env.NEXT_PUBLIC_API_KEY
-  return key ? { Authorization: `Bearer ${key}` } : {}
+  const stored = storedApiKey()
+  if (stored) return { Authorization: `Bearer ${stored}` }
+  const env = process.env.NEXT_PUBLIC_API_KEY
+  if (env) return { Authorization: `Bearer ${env}` }
+  return {}
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

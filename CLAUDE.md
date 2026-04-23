@@ -672,6 +672,7 @@ Sidebar แบ่ง 2 กลุ่ม:
 
 **Master Data** (admin CRUD) — Hospitals · Doctors · INSCL Maps · Drug Maps (→TMT24) · Doctor Maps (→DRDX) · ICD Maps · Field Maps (HIS column → target spec)
 
+- `/login` — paste API key → validate via `/api/v1/auth/whoami` → store in `localStorage` (`nexclaim.apiKey`); dashboard routes guarded by `AuthGuard` client-effect redirect; Header logout clears storage
 - `lib/api.ts` — typed client (ทุก endpoint); every hook ใช้ React Query → invalidate keys หลัง mutation
 - Admin pages share `BulkImportModal` (CSV auto-detect delimiter) + per-row error display (`BulkResult.errors`)
 - `SubmissionOutcome` — inline banner หลัง `fetchRep` (fetched/inserted/skipped/errors)

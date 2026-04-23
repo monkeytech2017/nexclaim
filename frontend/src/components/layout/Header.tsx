@@ -1,8 +1,9 @@
 'use client'
 import { usePathname } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
+import { LogOut } from 'lucide-react'
 import { health } from '@/lib/api'
-import { useIdentity } from '@/lib/auth-context'
+import { useIdentity, useLogout } from '@/lib/auth-context'
 
 const titles: Record<string, string> = {
   '/dashboard':       'ภาพรวม',
@@ -31,6 +32,7 @@ export default function Header() {
   const pathname = usePathname()
   const title = titleFor(pathname)
   const identity = useIdentity()
+  const logout = useLogout()
 
   const { data, isError } = useQuery({
     queryKey: ['health'],
@@ -54,18 +56,29 @@ export default function Header() {
           {statusLabel}
         </span>
         {identity && (
-          <span
-            className={`text-xs px-2 py-1 rounded-full font-medium ${
-              identity.role === 'admin'
-                ? 'bg-gray-100 text-gray-700'
-                : 'bg-blue-50 text-blue-700'
-            }`}
-            title={identity.id}
-          >
-            {identity.role === 'admin'
-              ? `admin — ${identity.name}`
-              : `รพ. ${identity.hcode ?? ''} — ${identity.name}`}
-          </span>
+          <>
+            <span
+              className={`text-xs px-2 py-1 rounded-full font-medium ${
+                identity.role === 'admin'
+                  ? 'bg-gray-100 text-gray-700'
+                  : 'bg-blue-50 text-blue-700'
+              }`}
+              title={identity.id}
+            >
+              {identity.role === 'admin'
+                ? `admin — ${identity.name}`
+                : `รพ. ${identity.hcode ?? ''} — ${identity.name}`}
+            </span>
+            <button
+              type="button"
+              onClick={logout}
+              title="ออกจากระบบ"
+              aria-label="ออกจากระบบ"
+              className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </>
         )}
         <div className="w-7 h-7 rounded-full bg-primary-50 flex items-center justify-center text-xs font-medium text-primary-600">
           JT
