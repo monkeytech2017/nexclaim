@@ -45,6 +45,10 @@ type Identity struct {
 	IsActive   bool       `json:"is_active,omitempty"`
 	CreatedAt  time.Time  `json:"created_at,omitempty"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	// ExpiresAt is nil for keys that never expire (the back-compat default).
+	// When set, middleware rejects requests whose ExpiresAt is in the past —
+	// using the SAME 401 body as unknown keys, so we never leak "expired".
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // Role constants — string literals match the DB CHECK constraint.
@@ -68,6 +72,12 @@ const keyHexLen = 40
 // ErrInvalidKey is returned when the bearer token doesn't match any active row.
 var ErrInvalidKey = errors.New("invalid or inactive api key")
 
+// invalidBearerMsg is the ONLY 401 body the middleware ever emits. Missing
+// header, unknown key, inactive row, and expired key all collapse to this
+// single string so an attacker cannot distinguish "key exists but expired"
+// from "key doesn't exist". Locked by spec — do not add variants.
+const invalidBearerMsg = "missing or invalid Authorization bearer token"
+
 // HashKey returns the hex SHA-256 of the raw key. Safe to call on untrusted
 // input — length is always 64 chars, matches the DB column width.
 func HashKey(raw string) string {
@@ -88,11 +98,13 @@ func GenerateKey() (raw string, hash string, err error) {
 
 // Insert is the payload for Repo.Insert. The caller is responsible for
 // hashing the raw key before calling Insert — keep the raw key out of Repo.
+// ExpiresAt is optional; nil = key never expires.
 type Insert struct {
-	KeyHash string
-	Role    string
-	HCode   string // empty for admin
-	Name    string
+	KeyHash   string
+	Role      string
+	HCode     string // empty for admin
+	Name      string
+	ExpiresAt *time.Time // nil = no expiry
 }
 
 // Repo is the persistence contract for api_key. Implementations must:
@@ -130,12 +142,18 @@ func Middleware(repo Repo, enabled bool) gin.HandlerFunc {
 		}
 		raw := extractBearer(c.GetHeader("Authorization"))
 		if raw == "" {
-			abort(c, http.StatusUnauthorized, "missing Authorization bearer token")
+			abort(c, http.StatusUnauthorized, invalidBearerMsg)
 			return
 		}
 		ident, err := repo.GetByHash(c.Request.Context(), HashKey(raw))
 		if err != nil || ident == nil {
-			abort(c, http.StatusUnauthorized, "invalid or inactive api key")
+			abort(c, http.StatusUnauthorized, invalidBearerMsg)
+			return
+		}
+		// Expired keys return the SAME 401 body as unknown keys — no leak
+		// of the fact that a key existed but expired. Spec locked.
+		if ident.ExpiresAt != nil && ident.ExpiresAt.Before(time.Now()) {
+			abort(c, http.StatusUnauthorized, invalidBearerMsg)
 			return
 		}
 		c.Set(IdentityKey, ident)

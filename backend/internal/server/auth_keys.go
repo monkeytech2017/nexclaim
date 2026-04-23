@@ -27,6 +27,7 @@ type APIKeyDTO struct {
 	IsActive   bool       `json:"is_active"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	RawKey     string     `json:"raw_key,omitempty"`
 }
 
@@ -40,6 +41,7 @@ func toAPIKeyDTO(ident *auth.Identity) APIKeyDTO {
 		IsActive:   ident.IsActive,
 		CreatedAt:  ident.CreatedAt,
 		LastUsedAt: ident.LastUsedAt,
+		ExpiresAt:  ident.ExpiresAt,
 	}
 	if ident.HCode != "" {
 		h := ident.HCode
@@ -50,10 +52,15 @@ func toAPIKeyDTO(ident *auth.Identity) APIKeyDTO {
 
 // createAPIKeyReq is the POST body. HCode is a plain string (not *string) so
 // json binding + validation stays simple; empty string means "not supplied".
+//
+// TTLDays is optional: 0 / missing → no expiry; positive → expires_at set to
+// now + TTLDays*24h; negative → 400. Audit payload carries ttl_days only when
+// > 0 so the common "no expiry" case stays terse.
 type createAPIKeyReq struct {
-	Role  string `json:"role"`
-	HCode string `json:"hcode"`
-	Name  string `json:"name"`
+	Role    string `json:"role"`
+	HCode   string `json:"hcode"`
+	Name    string `json:"name"`
+	TTLDays int    `json:"ttl_days,omitempty"`
 }
 
 // createAPIKeyHandler mints a new api_key row and returns the raw token.
@@ -91,6 +98,17 @@ func createAPIKeyHandler(d Deps) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "admin role must not have hcode"})
 			return
 		}
+		if req.TTLDays < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ttl_days must be >= 0"})
+			return
+		}
+
+		// TTL > 0 → compute absolute expiry; 0 → nil (never expires).
+		var expires *time.Time
+		if req.TTLDays > 0 {
+			t := time.Now().Add(time.Duration(req.TTLDays) * 24 * time.Hour)
+			expires = &t
+		}
 
 		raw, hash, err := auth.GenerateKey()
 		if err != nil {
@@ -99,6 +117,7 @@ func createAPIKeyHandler(d Deps) gin.HandlerFunc {
 		}
 		ident, err := d.AuthRepo.Insert(c.Request.Context(), auth.Insert{
 			KeyHash: hash, Role: req.Role, HCode: req.HCode, Name: req.Name,
+			ExpiresAt: expires,
 		})
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": translateAPIKeyInsertErr(err, req.HCode)})
@@ -117,7 +136,17 @@ func createAPIKeyHandler(d Deps) gin.HandlerFunc {
 			ident.ID, ident.Role, ident.HCode, ident.Name, actorID)
 
 		// Audit: api_key.create — payload CAREFULLY excludes the raw key + hash.
+		// ttl_days is included ONLY when > 0; zero/no-expiry is the common case,
+		// omitting the field keeps the common payload tidy.
 		actorRole, actorName, aid := audit.ActorFromContext(c)
+		payload := map[string]any{
+			"role":  ident.Role,
+			"hcode": ident.HCode,
+			"name":  ident.Name,
+		}
+		if req.TTLDays > 0 {
+			payload["ttl_days"] = req.TTLDays
+		}
 		writeAudit(c.Request.Context(), d, audit.Entry{
 			ActorID:    aid,
 			ActorRole:  actorRole,
@@ -126,11 +155,7 @@ func createAPIKeyHandler(d Deps) gin.HandlerFunc {
 			TargetKind: "api_key",
 			TargetID:   ident.ID,
 			HCode:      ident.HCode,
-			Payload: map[string]any{
-				"role":  ident.Role,
-				"hcode": ident.HCode,
-				"name":  ident.Name,
-			},
+			Payload:    payload,
 		})
 
 		dto := toAPIKeyDTO(ident)

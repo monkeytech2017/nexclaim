@@ -169,6 +169,9 @@ export interface APIKey {
   is_active:     boolean
   created_at:    string
   last_used_at?: string
+  // expires_at: nil/absent means "never expires" (back-compat default).
+  // When present, the backend rejects the key after this timestamp.
+  expires_at?:   string
 }
 
 export interface APIKeyCreateResponse extends APIKey {
@@ -177,7 +180,9 @@ export interface APIKeyCreateResponse extends APIKey {
 
 export const apiKeysApi = {
   list:       () => request<{ items: APIKey[] }>('/api/v1/auth/keys'),
-  create:     (body: { role: 'admin' | 'hospital'; hcode?: string; name: string }) =>
+  // ttl_days: optional integer. 0/absent = no expiry; positive = now + N days.
+  // Negative → backend returns 400.
+  create:     (body: { role: 'admin' | 'hospital'; hcode?: string; name: string; ttl_days?: number }) =>
                 request<APIKeyCreateResponse>('/api/v1/auth/keys', { method: 'POST', body: JSON.stringify(body) }),
   setActive:  (id: string, is_active: boolean) =>
                 request<APIKey>(`/api/v1/auth/keys/${encodeURIComponent(id)}`, {

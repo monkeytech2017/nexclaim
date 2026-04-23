@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -120,6 +121,16 @@ func runServer(args []string) {
 		fmt.Fprintln(os.Stderr, "[NexClaim] AUTH_ENABLED=true but no DB — auth middleware will pass through")
 	}
 
+	// RATE_LIMIT_PER_MIN: 0 = disabled, default 60. Non-numeric → warn + default.
+	rateLimitPerMin := 60
+	if raw := os.Getenv("RATE_LIMIT_PER_MIN"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			rateLimitPerMin = n
+		} else {
+			fmt.Fprintf(os.Stderr, "[NexClaim] RATE_LIMIT_PER_MIN=%q invalid, using default 60\n", raw)
+		}
+	}
+
 	engine := server.New(server.Deps{
 		HCode:        hcode,
 		Extractor:    extr,
@@ -129,8 +140,9 @@ func runServer(args []string) {
 		Batches:      batches,
 		IPDShareRoot: ipdShareRoot,
 		ClaimRepo:    claimRepo,
-		AuthRepo:      authRepo,
-		AuthEnabled:   authEnabled,
+		AuthRepo:        authRepo,
+		AuthEnabled:     authEnabled,
+		RateLimitPerMin: rateLimitPerMin,
 		HospitalRepo:  hospitalRepo,
 		DoctorRepo:    doctorRepo,
 		InsclMapRepo:  insclMapRepo,

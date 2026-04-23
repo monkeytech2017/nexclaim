@@ -28,10 +28,12 @@ type apiKeyRow struct {
 	IsActive   bool         `db:"is_active"`
 	CreatedAt  time.Time    `db:"created_at"`
 	LastUsedAt sql.NullTime `db:"last_used_at"`
+	ExpiresAt  sql.NullTime `db:"expires_at"`
 }
 
-// toIdentity projects an apiKeyRow into the domain Identity. last_used_at is
-// NULL for never-used keys — expose it as nil in the DTO so JSON omits the key.
+// toIdentity projects an apiKeyRow into the domain Identity. last_used_at +
+// expires_at are NULL for never-used / never-expiring keys — expose as nil
+// pointers so JSON omits the keys.
 func (r apiKeyRow) toIdentity() *auth.Identity {
 	ident := &auth.Identity{
 		ID: r.ID, Role: r.Role, HCode: r.HCode, Name: r.Name,
@@ -40,6 +42,10 @@ func (r apiKeyRow) toIdentity() *auth.Identity {
 	if r.LastUsedAt.Valid {
 		t := r.LastUsedAt.Time
 		ident.LastUsedAt = &t
+	}
+	if r.ExpiresAt.Valid {
+		t := r.ExpiresAt.Time
+		ident.ExpiresAt = &t
 	}
 	return ident
 }
@@ -53,7 +59,8 @@ func (r *PgAPIKeyRepo) GetByHash(ctx context.Context, hash string) (*auth.Identi
 		       name,
 		       is_active,
 		       created_at,
-		       last_used_at
+		       last_used_at,
+		       expires_at
 		FROM api_key
 		WHERE key_hash = $1 AND is_active = true
 	`, hash)
@@ -97,18 +104,24 @@ func (r *PgAPIKeyRepo) Insert(ctx context.Context, in auth.Insert) (*auth.Identi
 
 	// Insert with NULLIF so an empty hcode becomes NULL (matches the
 	// role-admin case; the CHECK constraint would otherwise reject).
+	// expires_at: nil → NULL (never expires); time → stored as TIMESTAMPTZ.
+	var expires sql.NullTime
+	if in.ExpiresAt != nil {
+		expires = sql.NullTime{Time: *in.ExpiresAt, Valid: true}
+	}
 	var row apiKeyRow
 	err := r.db.QueryRowxContext(ctx, `
-		INSERT INTO api_key (key_hash, role, hcode, name, is_active)
-		VALUES ($1, $2, NULLIF($3,''), $4, true)
+		INSERT INTO api_key (key_hash, role, hcode, name, is_active, expires_at)
+		VALUES ($1, $2, NULLIF($3,''), $4, true, $5)
 		RETURNING id::text,
 		          role,
 		          COALESCE(hcode,'') AS hcode,
 		          name,
 		          is_active,
 		          created_at,
-		          last_used_at
-	`, in.KeyHash, in.Role, in.HCode, in.Name).StructScan(&row)
+		          last_used_at,
+		          expires_at
+	`, in.KeyHash, in.Role, in.HCode, in.Name, expires).StructScan(&row)
 	if err != nil {
 		return nil, fmt.Errorf("api_key insert: %w", err)
 	}
@@ -126,7 +139,8 @@ func (r *PgAPIKeyRepo) List(ctx context.Context) ([]auth.Identity, error) {
 		       name,
 		       is_active,
 		       created_at,
-		       last_used_at
+		       last_used_at,
+		       expires_at
 		FROM api_key
 		ORDER BY created_at DESC
 	`)
@@ -155,7 +169,8 @@ func (r *PgAPIKeyRepo) SetActive(ctx context.Context, id string, active bool) (*
 		          name,
 		          is_active,
 		          created_at,
-		          last_used_at
+		          last_used_at,
+		          expires_at
 	`, id, active).StructScan(&row)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound

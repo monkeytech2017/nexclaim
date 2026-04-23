@@ -53,6 +53,7 @@ func (m *memAuthRepo) Insert(_ context.Context, in auth.Insert) (*auth.Identity,
 	ident := &auth.Identity{
 		ID: id, Role: in.Role, HCode: in.HCode, Name: in.Name,
 		IsActive: true, CreatedAt: time.Now(),
+		ExpiresAt: in.ExpiresAt,
 	}
 	m.byID[id] = ident
 	m.hash[in.KeyHash] = id
@@ -175,6 +176,71 @@ func TestAuthMiddleware_ValidKey_200(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("admin list: want 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ── TTL / expiry enforcement ──
+
+// mintWithExpiry is a test helper mirroring mint() but stamps ExpiresAt so we
+// can exercise the middleware's expiry check.
+func (m *memAuthRepo) mintWithExpiry(role, hcode, name string, expires *time.Time) string {
+	raw, hash, _ := auth.GenerateKey()
+	_, _ = m.Insert(context.Background(), auth.Insert{
+		KeyHash: hash, Role: role, HCode: hcode, Name: name,
+		ExpiresAt: expires,
+	})
+	return raw
+}
+
+func TestAuthMiddleware_ExpiredKey_401(t *testing.T) {
+	ar := newMemAuthRepo()
+	past := time.Now().Add(-1 * time.Hour)
+	expiredKey := ar.mintWithExpiry(auth.RoleAdmin, "", "expired-admin", &past)
+	h := server.New(server.Deps{
+		AuthRepo: ar, AuthEnabled: true,
+		ClaimBatchRepo: newMemClaimBatchRepo(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/whoami", nil)
+	req.Header.Set("Authorization", "Bearer "+expiredKey)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expired key: want 401, got %d body=%s", w.Code, w.Body.String())
+	}
+	// Spec: same 401 body as unknown-key — must NOT leak "expired".
+	body := w.Body.String()
+	if strings.Contains(strings.ToLower(body), "expir") {
+		t.Errorf("expired-key 401 leaks expiry in body: %s", body)
+	}
+
+	// Sanity: a truly-unknown key hits the same status + same body shape.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/auth/whoami", nil)
+	req.Header.Set("Authorization", "Bearer nck_unknown")
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, req)
+	if w2.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown key: want 401, got %d", w2.Code)
+	}
+	if w.Body.String() != w2.Body.String() {
+		t.Errorf("expired (%s) vs unknown (%s) bodies differ — leak!", w.Body.String(), w2.Body.String())
+	}
+}
+
+func TestAuthMiddleware_NonExpiredKey_200(t *testing.T) {
+	ar := newMemAuthRepo()
+	future := time.Now().Add(24 * time.Hour)
+	key := ar.mintWithExpiry(auth.RoleAdmin, "", "future-admin", &future)
+	h := server.New(server.Deps{
+		AuthRepo: ar, AuthEnabled: true,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/whoami", nil)
+	req.Header.Set("Authorization", "Bearer "+key)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("future-expiry key should pass: want 200, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -482,6 +548,42 @@ func TestAPIKeyRepo_Pg(t *testing.T) {
 	}
 	if n < 2 {
 		t.Errorf("count = %d, want >= 2", n)
+	}
+
+	// ExpiresAt round-trip: insert with a future expiry, read it back via
+	// GetByHash and confirm ExpiresAt is populated (±1s of what we sent).
+	rawE, hashE, _ := auth.GenerateKey()
+	wantExp := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
+	if _, err := repo.Insert(ctx, auth.Insert{
+		KeyHash: hashE, Role: auth.RoleAdmin, Name: "test-admin-ttl",
+		ExpiresAt: &wantExp,
+	}); err != nil {
+		t.Fatalf("insert admin with ttl: %v", err)
+	}
+	gotE, err := repo.GetByHash(ctx, auth.HashKey(rawE))
+	if err != nil {
+		t.Fatalf("get ttl admin: %v", err)
+	}
+	if gotE.ExpiresAt == nil {
+		t.Fatalf("expires_at should round-trip, got nil")
+	}
+	if delta := gotE.ExpiresAt.Sub(wantExp); delta > time.Second || delta < -time.Second {
+		t.Errorf("expires_at drift: want=%s got=%s", wantExp, *gotE.ExpiresAt)
+	}
+
+	// And a NULL-expiry insert still yields ExpiresAt == nil.
+	rawN, hashN, _ := auth.GenerateKey()
+	if _, err := repo.Insert(ctx, auth.Insert{
+		KeyHash: hashN, Role: auth.RoleAdmin, Name: "test-admin-noexp",
+	}); err != nil {
+		t.Fatalf("insert no-exp: %v", err)
+	}
+	gotN, err := repo.GetByHash(ctx, auth.HashKey(rawN))
+	if err != nil {
+		t.Fatalf("get no-exp: %v", err)
+	}
+	if gotN.ExpiresAt != nil {
+		t.Errorf("nil-expiry should stay nil, got %v", gotN.ExpiresAt)
 	}
 
 	// Validation: admin cannot have hcode.

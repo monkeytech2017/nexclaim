@@ -57,7 +57,7 @@ else
 fi
 
 # Step 2: apply schema migrations
-for migration in 001_master_data.sql 002_his_mapping.sql 003_transactions.sql 004_ingest_batch.sql 005_api_key.sql 006_audit_log.sql; do
+for migration in 001_master_data.sql 002_his_mapping.sql 003_transactions.sql 004_ingest_batch.sql 005_api_key.sql 006_audit_log.sql 007_api_key_ttl.sql; do
   echo "[init_db] applying $migration..."
   psql -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$MIGRATIONS_DIR/$migration"
 done

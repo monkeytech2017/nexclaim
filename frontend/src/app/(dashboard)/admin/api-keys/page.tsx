@@ -80,6 +80,7 @@ export default function ApiKeysPage() {
                 <th className="px-4 py-2.5 text-left font-medium">HCODE</th>
                 <th className="px-4 py-2.5 text-left font-medium">สร้างเมื่อ</th>
                 <th className="px-4 py-2.5 text-left font-medium">ใช้งานล่าสุด</th>
+                <th className="px-4 py-2.5 text-left font-medium">หมดอายุ</th>
                 <th className="px-4 py-2.5 text-left font-medium">สถานะ</th>
                 <th className="px-4 py-2.5 text-right font-medium">Action</th>
               </tr>
@@ -93,6 +94,9 @@ export default function ApiKeysPage() {
                   <td className="px-4 py-2.5 text-xs text-gray-500">{formatDT(k.created_at)}</td>
                   <td className="px-4 py-2.5 text-xs text-gray-500">
                     {k.last_used_at ? formatDT(k.last_used_at) : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs">
+                    <ExpiryCell expiresAt={k.expires_at} />
                   </td>
                   <td className="px-4 py-2.5">
                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
@@ -148,6 +152,9 @@ function CreateKeyModal({ onClose }: { onClose: () => void }) {
   const [role, setRole] = useState<'admin' | 'hospital'>('hospital')
   const [hcode, setHcode] = useState('')
   const [name, setName] = useState('')
+  // TTL input is a string so users can clear the field (empty = no expiry).
+  // We coerce to a non-negative integer at submit time.
+  const [ttlDays, setTtlDays] = useState<string>('')
   const [created, setCreated] = useState<APIKeyCreateResponse | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -165,8 +172,12 @@ function CreateKeyModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const body: { role: 'admin' | 'hospital'; hcode?: string; name: string } = { role, name }
+    const body: { role: 'admin' | 'hospital'; hcode?: string; name: string; ttl_days?: number } = { role, name }
     if (role === 'hospital') body.hcode = hcode
+    // Only include ttl_days when >0; empty/0 = never expires. Backend rejects
+    // negatives with 400; we also guard here to avoid a needless round-trip.
+    const parsed = parseInt(ttlDays, 10)
+    if (!Number.isNaN(parsed) && parsed > 0) body.ttl_days = parsed
     create.mutate(body)
   }
 
@@ -233,6 +244,19 @@ function CreateKeyModal({ onClose }: { onClose: () => void }) {
                   placeholder="เช่น รพ.ก. — HIS integration"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                 />
+              </Field>
+              <Field label="TTL (วัน)">
+                <input
+                  type="number"
+                  min="0"
+                  value={ttlDays}
+                  onChange={e => setTtlDays(e.target.value)}
+                  placeholder="เว้นว่าง = ไม่หมดอายุ"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  เว้นว่าง = ไม่หมดอายุ · ใส่จำนวนวัน เช่น 30, 90, 365
+                </p>
               </Field>
               {create.isError && <ErrorBlock error={create.error} />}
             </div>
@@ -327,4 +351,25 @@ function formatDT(iso: string): string {
   } catch {
     return iso
   }
+}
+
+// ExpiryCell renders the "หมดอายุ" column. Three visual states:
+//   - no expires_at → gray em-dash (never expires, back-compat default)
+//   - in the future → muted date + "เหลือ N วัน" hint
+//   - already past  → red date + "หมดอายุแล้ว"
+function ExpiryCell({ expiresAt }: { expiresAt?: string }) {
+  if (!expiresAt) return <span className="text-gray-300">—</span>
+  const expMs = new Date(expiresAt).getTime()
+  if (Number.isNaN(expMs)) return <span className="text-gray-300">—</span>
+  const now = Date.now()
+  const diffDays = Math.floor((expMs - now) / (24 * 60 * 60 * 1000))
+  const expired = expMs <= now
+  return (
+    <div className={expired ? 'text-red-600' : 'text-gray-500'}>
+      <div>{formatDT(expiresAt)}</div>
+      <div className="text-[11px]">
+        {expired ? 'หมดอายุแล้ว' : `เหลือ ${diffDays} วัน`}
+      </div>
+    </div>
+  )
 }

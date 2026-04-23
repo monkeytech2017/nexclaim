@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nexclaim/nexclaim/internal/auth"
 	"github.com/nexclaim/nexclaim/internal/db"
@@ -28,6 +29,7 @@ type apiKeyDTO struct {
 	IsActive   bool    `json:"is_active"`
 	CreatedAt  string  `json:"created_at"`
 	LastUsedAt *string `json:"last_used_at,omitempty"`
+	ExpiresAt  *string `json:"expires_at,omitempty"`
 	RawKey     string  `json:"raw_key,omitempty"`
 }
 
@@ -334,6 +336,145 @@ func TestAPIKeys_AdminCallerAllowed(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("admin GET want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+// ── TTL / expires_at ──
+
+func TestCreateAPIKey_WithTTL(t *testing.T) {
+	repo := newMemAuthRepo()
+	au := newMemAuditRepo()
+	h := server.New(server.Deps{AuthRepo: repo, AuditWriter: au})
+
+	body, _ := json.Marshal(map[string]any{
+		"role": "admin", "name": "with-ttl", "ttl_days": 30,
+	})
+	before := time.Now()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/keys", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var dto apiKeyDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if dto.ExpiresAt == nil {
+		t.Fatalf("expires_at missing on ttl_days=30")
+	}
+	exp, err := time.Parse(time.RFC3339Nano, *dto.ExpiresAt)
+	if err != nil {
+		t.Fatalf("parse expires_at %q: %v", *dto.ExpiresAt, err)
+	}
+	// Expect now+30d, within a 5-second tolerance.
+	wantMin := before.Add(30 * 24 * time.Hour).Add(-5 * time.Second)
+	wantMax := time.Now().Add(30 * 24 * time.Hour).Add(5 * time.Second)
+	if exp.Before(wantMin) || exp.After(wantMax) {
+		t.Errorf("expires_at = %s, want ~30d out (between %s and %s)", exp, wantMin, wantMax)
+	}
+
+	// Audit payload carries ttl_days.
+	found := false
+	for _, e := range au.entries {
+		if e.Action == "api_key.create" {
+			found = true
+			if v, ok := e.Payload["ttl_days"]; !ok || v != 30 {
+				t.Errorf("audit payload ttl_days want 30, got %v (payload=%v)", v, e.Payload)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no api_key.create audit entry recorded")
+	}
+}
+
+func TestCreateAPIKey_NegativeTTL_400(t *testing.T) {
+	repo := newMemAuthRepo()
+	h := server.New(server.Deps{AuthRepo: repo})
+
+	body, _ := json.Marshal(map[string]any{
+		"role": "admin", "name": "neg-ttl", "ttl_days": -1,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/keys", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for negative ttl_days, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateAPIKey_ZeroTTL_NoAuditTTL(t *testing.T) {
+	// Sanity: ttl_days=0 (omitted) → no expires_at, no ttl_days in audit.
+	repo := newMemAuthRepo()
+	au := newMemAuditRepo()
+	h := server.New(server.Deps{AuthRepo: repo, AuditWriter: au})
+
+	body, _ := json.Marshal(map[string]any{"role": "admin", "name": "no-ttl"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/keys", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var dto apiKeyDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &dto)
+	if dto.ExpiresAt != nil {
+		t.Errorf("expires_at should be nil when ttl_days omitted, got %v", *dto.ExpiresAt)
+	}
+	for _, e := range au.entries {
+		if e.Action != "api_key.create" {
+			continue
+		}
+		if _, ok := e.Payload["ttl_days"]; ok {
+			t.Errorf("audit payload should NOT include ttl_days when 0, got %v", e.Payload)
+		}
+	}
+}
+
+func TestListAPIKeys_IncludesExpiresAt(t *testing.T) {
+	repo := newMemAuthRepo()
+	future := time.Now().Add(7 * 24 * time.Hour)
+	_, _ = repo.Insert(context.Background(), auth.Insert{
+		KeyHash: auth.HashKey("nck_ttl"), Role: auth.RoleAdmin, Name: "ttl-admin",
+		ExpiresAt: &future,
+	})
+	_ = repo.mint(auth.RoleAdmin, "", "noexp-admin")
+
+	h := server.New(server.Deps{AuthRepo: repo})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/keys", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp struct {
+		Items []apiKeyDTO `json:"items"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	var sawTTL, sawNoExp bool
+	for _, it := range resp.Items {
+		switch it.Name {
+		case "ttl-admin":
+			if it.ExpiresAt == nil {
+				t.Errorf("ttl-admin should have expires_at, got nil")
+			} else {
+				sawTTL = true
+			}
+		case "noexp-admin":
+			if it.ExpiresAt != nil {
+				t.Errorf("noexp-admin should have nil expires_at, got %v", *it.ExpiresAt)
+			} else {
+				sawNoExp = true
+			}
+		}
+	}
+	if !sawTTL || !sawNoExp {
+		t.Errorf("list coverage missing: sawTTL=%v sawNoExp=%v (items=%+v)", sawTTL, sawNoExp, resp.Items)
 	}
 }
 

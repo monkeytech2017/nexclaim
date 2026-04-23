@@ -50,11 +50,31 @@ func runAuth(args []string) {
 
 func printAuthUsage() {
 	fmt.Println("Usage:")
-	fmt.Println("  nexclaim auth create-admin    --name <label>")
-	fmt.Println("  nexclaim auth create-hospital --hcode <5 digits> --name <label>")
+	fmt.Println("  nexclaim auth create-admin    --name <label> [--ttl <duration>]")
+	fmt.Println("  nexclaim auth create-hospital --hcode <5 digits> --name <label> [--ttl <duration>]")
 	fmt.Println("  nexclaim auth list")
 	fmt.Println()
 	fmt.Println("The raw key is printed ONCE on creation. Save it immediately.")
+	fmt.Println("--ttl accepts time.ParseDuration (e.g. '720h' for 30 days). Omit = never expires.")
+}
+
+// parseTTLFlag turns a --ttl CLI arg into an absolute expiry time. Empty
+// string → nil (never expires, the default). Positive duration → now + d.
+// Zero or negative duration → error (ambiguous: do you mean "now"?). We force
+// operators to be explicit by omitting --ttl for "no expiry".
+func parseTTLFlag(raw string) (*time.Time, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse %q: %w", raw, err)
+	}
+	if d <= 0 {
+		return nil, fmt.Errorf("ttl must be positive, got %s (omit --ttl for no expiry)", d)
+	}
+	t := time.Now().Add(d)
+	return &t, nil
 }
 
 // openAuthDB is a small helper shared by all auth subcommands. It loads .env,
@@ -82,9 +102,15 @@ func openAuthDB() *sqlx.DB {
 func runAuthCreateAdmin(args []string) {
 	fs := flag.NewFlagSet("create-admin", flag.ExitOnError)
 	name := fs.String("name", "", "human label for this key (e.g. 'ops-laptop-2026')")
+	ttl := fs.String("ttl", "", "optional TTL (time.ParseDuration), e.g. '720h' for 30 days; empty = never expires")
 	_ = fs.Parse(args)
 	if *name == "" {
 		fmt.Fprintln(os.Stderr, "ต้องระบุ --name")
+		os.Exit(2)
+	}
+	expires, err := parseTTLFlag(*ttl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ttl: %v\n", err)
 		os.Exit(2)
 	}
 
@@ -101,6 +127,7 @@ func runAuthCreateAdmin(args []string) {
 	defer cancel()
 	ident, err := repo.Insert(ctx, auth.Insert{
 		KeyHash: hash, Role: auth.RoleAdmin, Name: *name,
+		ExpiresAt: expires,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "insert: %v\n", err)
@@ -113,6 +140,7 @@ func runAuthCreateHospital(args []string) {
 	fs := flag.NewFlagSet("create-hospital", flag.ExitOnError)
 	hcode := fs.String("hcode", "", "5-digit hospital code (must exist in m_hospital)")
 	name := fs.String("name", "", "human label")
+	ttl := fs.String("ttl", "", "optional TTL (time.ParseDuration), e.g. '720h' for 30 days; empty = never expires")
 	_ = fs.Parse(args)
 	if *hcode == "" || *name == "" {
 		fmt.Fprintln(os.Stderr, "ต้องระบุ --hcode และ --name")
@@ -120,6 +148,11 @@ func runAuthCreateHospital(args []string) {
 	}
 	if len(*hcode) != 5 {
 		fmt.Fprintln(os.Stderr, "hcode ต้อง 5 หลัก")
+		os.Exit(2)
+	}
+	expires, err := parseTTLFlag(*ttl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ttl: %v\n", err)
 		os.Exit(2)
 	}
 
@@ -136,6 +169,7 @@ func runAuthCreateHospital(args []string) {
 	defer cancel()
 	ident, err := repo.Insert(ctx, auth.Insert{
 		KeyHash: hash, Role: auth.RoleHospital, HCode: *hcode, Name: *name,
+		ExpiresAt: expires,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "insert: %v\n", err)

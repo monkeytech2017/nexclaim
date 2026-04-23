@@ -52,6 +52,10 @@ type Deps struct {
 	// Nil = middleware becomes a pass-through (back-compat for dev + tests).
 	AuthRepo    auth.Repo
 	AuthEnabled bool
+	// RateLimitPerMin caps bootstrap/whoami/keys-POST requests per client IP
+	// per minute. 0 (default) = disabled. Single-instance only; see
+	// auth/ratelimit.go header.
+	RateLimitPerMin int
 	// HospitalRepo backs the /api/v1/master/hospitals admin endpoints.
 	// Nil = return 503 (admin CRUD requires a database).
 	HospitalRepo  store.HospitalRepo
@@ -110,20 +114,30 @@ func New(d Deps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	// Rate limiter for hot security endpoints only. A nil rl returns a
+	// pass-through middleware, so we always wire it (no branching here).
+	rl := auth.NewRateLimiter(d.RateLimitPerMin)
+	rlMW := rl.Middleware()
+
 	// ── public ──
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "service": "nexclaim"})
 	})
-	r.POST("/api/v1/auth/bootstrap", bootstrapHandler(d))
+	// Rate limit BEFORE the handler runs so bootstrap's DB round-trip is
+	// shielded too (matches whoami + keys POST below).
+	r.POST("/api/v1/auth/bootstrap", rlMW, bootstrapHandler(d))
 
 	// ── authed root ──
 	authed := r.Group("", auth.Middleware(d.AuthRepo, d.AuthEnabled))
-	authed.GET("/api/v1/auth/whoami", whoamiHandler())
+	// whoami is cheap but a common probe target; rate-limit it too.
+	authed.GET("/api/v1/auth/whoami", rlMW, whoamiHandler())
 
 	// Admin-only API-key management (create / list / deactivate).
 	// Rotation workflow: create new → deactivate old (no explicit delete).
+	// Rate limit ONLY the POST (minting) path; list/patch are admin-only and
+	// low-volume, so the limiter would just be noise.
 	keys := authed.Group("/api/v1/auth/keys", auth.RequireRole(auth.RoleAdmin))
-	keys.POST("", createAPIKeyHandler(d))
+	keys.POST("", rlMW, createAPIKeyHandler(d))
 	keys.GET("", listAPIKeysHandler(d))
 	keys.PATCH("/:id", patchAPIKeyHandler(d))
 
