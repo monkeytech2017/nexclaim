@@ -127,6 +127,7 @@ func New(d Deps) *gin.Engine {
 	// Hospital-scoped group: HIS endpoints. Path :hcode matches via
 	// RequireHcodeMatch; batchId-scoped routes resolve hcode from the repo.
 	batchResolver := newBatchResolver(d.ClaimBatchRepo)
+	ccodeResolver := newCCodeResolver(d.CCodeRepo)
 	his := authed.Group("/api/v1/his")
 	his.POST("/opd/visits", receiveVisitsHandler(d)) // body carries hospital_code; handler validates
 	his.GET("/opd/batches", listBatchesHandler(d))
@@ -143,7 +144,7 @@ func New(d Deps) *gin.Engine {
 
 	// Hospital-scoped: c-code feedback.
 	authed.GET("/api/v1/ccodes", auth.RequireHcodeMatch("hcode"), listCCodesHandler(d))
-	authed.PATCH("/api/v1/ccodes/:id/resolve", resolveCCodeHandler(d))
+	authed.PATCH("/api/v1/ccodes/:id/resolve", auth.RequireCCodeHcodeMatch(ccodeResolver), resolveCCodeHandler(d))
 
 	// Hospital-scoped: send-log audit + dashboard summary.
 	authed.GET("/api/v1/send-logs", auth.RequireHcodeMatch("hcode"), listSendLogsHandler(d))

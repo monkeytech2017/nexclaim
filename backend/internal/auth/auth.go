@@ -256,6 +256,47 @@ func RequireBatchHcodeMatch(resolver BatchHcodeResolver) gin.HandlerFunc {
 	}
 }
 
+// CCodeHcodeResolver looks up the hcode of the claim_batch a c-code belongs
+// to, via the batch join. Declared as an interface so auth stays store-free.
+type CCodeHcodeResolver interface {
+	GetHcode(ctx context.Context, ccodeID string) (string, error)
+}
+
+// RequireCCodeHcodeMatch reads :id from the path (a c-code UUID), resolves
+// its hcode, and rejects hospital callers whose bound hcode differs. admin
+// passes. No-op if auth is disabled or resolver is nil. Mirror of
+// RequireBatchHcodeMatch — separate because the param name differs.
+func RequireCCodeHcodeMatch(resolver CCodeHcodeResolver) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ident, ok := FromContext(c)
+		if !ok || resolver == nil {
+			c.Next()
+			return
+		}
+		if ident.Role == RoleAdmin {
+			c.Next()
+			return
+		}
+		id := c.Param("id")
+		if id == "" {
+			c.Next()
+			return
+		}
+		hcode, err := resolver.GetHcode(c.Request.Context(), id)
+		if err != nil || hcode == "" {
+			// Missing/unknown → let the handler return its own 404 instead
+			// of leaking existence via a 403 here.
+			c.Next()
+			return
+		}
+		if hcode != ident.HCode {
+			abort(c, http.StatusForbidden, fmt.Sprintf("c-code %s belongs to a different hospital", id))
+			return
+		}
+		c.Next()
+	}
+}
+
 // ── helpers ──
 
 // FromContext reads the Identity back out. ok=false means auth was disabled

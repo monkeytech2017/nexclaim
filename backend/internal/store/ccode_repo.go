@@ -58,6 +58,11 @@ type CCodeRepo interface {
 	// LookupClaimRecord ช่วย REP ingest: หา batch_id + record_id ที่ match กับ
 	// (hcode, period, hn, an/seq). ถ้าไม่เจอคืน "" ทั้งคู่ (ไม่ error).
 	LookupClaimRecord(ctx context.Context, hcode, period, hn, an, seq string) (batchID, recordID string)
+	// GetHcode resolves the hcode of the claim_batch a c-code belongs to.
+	// Returns "" (no error) when the c-code doesn't exist — auth middleware
+	// uses this to distinguish "unknown" (let handler return 404) from
+	// "known but wrong hospital" (403).
+	GetHcode(ctx context.Context, id string) (string, error)
 }
 
 type PgCCodeRepo struct{ db *sqlx.DB }
@@ -150,6 +155,23 @@ func (r *PgCCodeRepo) Resolve(ctx context.Context, id, by string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *PgCCodeRepo) GetHcode(ctx context.Context, id string) (string, error) {
+	var hcode string
+	err := r.db.GetContext(ctx, &hcode, `
+		SELECT cb.hcode
+		FROM c_code_log cc
+		JOIN claim_batch cb ON cb.batch_id = cc.batch_id
+		WHERE cc.id = $1::uuid
+	`, id)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("ccode GetHcode: %w", err)
+	}
+	return hcode, nil
 }
 
 func (r *PgCCodeRepo) LookupClaimRecord(ctx context.Context, hcode, period, hn, an, seq string) (string, string) {

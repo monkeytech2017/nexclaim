@@ -232,6 +232,44 @@ func TestAuthScope_AdminAnyHcode_200(t *testing.T) {
 	}
 }
 
+func TestAuthScope_CCodeResolveWrongHcode_403(t *testing.T) {
+	ar := newMemAuthRepo()
+	hospKey := ar.mint(auth.RoleHospital, "12345", "test-hospital")
+	cc := newMemCCodeRepo()
+	cc.hcodeByID["CC-OTHER"] = "99999" // belongs to a different hospital
+	h := server.New(server.Deps{
+		AuthRepo: ar, AuthEnabled: true,
+		CCodeRepo: cc,
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/ccodes/CC-OTHER/resolve", nil)
+	req.Header.Set("Authorization", "Bearer "+hospKey)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAuthScope_CCodeResolveOwnHcode_Passes(t *testing.T) {
+	ar := newMemAuthRepo()
+	hospKey := ar.mint(auth.RoleHospital, "12345", "test-hospital")
+	cc := newMemCCodeRepo()
+	cc.hcodeByID["CC-MINE"] = "12345"
+	cc.rows["CC-MINE"] = store.CCodeRow{ID: "CC-MINE", CCode: "C104"}
+	h := server.New(server.Deps{
+		AuthRepo: ar, AuthEnabled: true,
+		CCodeRepo: cc,
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/ccodes/CC-MINE/resolve", nil)
+	req.Header.Set("Authorization", "Bearer "+hospKey)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	// Handler returns 204 on resolve success (or 404 if already resolved).
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("own-hcode resolve should pass, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAuthScope_HospitalCannotHitMaster(t *testing.T) {
 	ar := newMemAuthRepo()
 	hospKey := ar.mint(auth.RoleHospital, "12345", "hosp")

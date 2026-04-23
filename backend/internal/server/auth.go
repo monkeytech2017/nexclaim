@@ -113,3 +113,18 @@ func newBatchResolver(repo store.ClaimBatchRepo) auth.BatchHcodeResolver {
 	}
 	return claimBatchHcodeAdapter{repo: repo}
 }
+
+// ccodeHcodeAdapter adapts store.CCodeRepo to auth.CCodeHcodeResolver. Same
+// store-free pattern as the batch adapter.
+type ccodeHcodeAdapter struct{ repo store.CCodeRepo }
+
+func (a ccodeHcodeAdapter) GetHcode(ctx context.Context, id string) (string, error) {
+	return a.repo.GetHcode(ctx, id)
+}
+
+func newCCodeResolver(repo store.CCodeRepo) auth.CCodeHcodeResolver {
+	if repo == nil {
+		return nil
+	}
+	return ccodeHcodeAdapter{repo: repo}
+}

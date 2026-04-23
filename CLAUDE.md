@@ -682,11 +682,27 @@ Sidebar แบ่ง 2 กลุ่ม:
 
 ## 15. Remaining Backlog
 
-1. **Real HIS API end-to-end** — ทดสอบ live `HIS_API_BASE_URL` + batch flow (spec xlsx มี endpoint แล้ว, client code พร้อม, ต้อง staging env จาก HIS team)
-2. **CHI REP parser** — mirror FDH REP ingest สำหรับ SSO (AIPN/SSOP)
-3. **Dashboard enrichment** — Recharts cards จาก `claim_batch` + `c_code_log` (รายสิทธิ, pass/fail, trend)
-4. **send_log audit trail** — insert ทุกครั้งที่ sender ส่ง (success/fail) + UI view
-5. **Auth middleware** — JWT หรือ API-key per hospital (ตอนนี้ server open; ต้อง gate ก่อน production)
+**Shipped in recent sessions** (for reference — don't re-do):
+- ✓ Dashboard enrichment — Recharts stats endpoint + UI
+- ✓ send_log audit trail — pipeline.Attempt + DB table + UI
+- ✓ Auth middleware — API-key + scope + CLI + frontend
+- ✓ Login page + localStorage + logout
+- ✓ Admin key management UI (`/admin/api-keys`)
+- ✓ C-code resolve scope fix (`RequireCCodeHcodeMatch`)
+
+**Open — no external blocker:**
+1. **Audit log** — `audit_log` table + `/api/v1/audit-log` + admin viewer page (who created/deactivated keys, resolved which c-code, etc.)
+2. **Rate limiting** — simple token-bucket on `/login`, `/bootstrap`, `POST /api/v1/auth/keys`
+3. **Key TTL / expiry** — `api_key.expires_at` + middleware rejection + CLI `--ttl` flag
+4. **Send retry loop** — `send_log.attempt_no` schema is ready; need a worker that retries failed sends with backoff
+5. **Dashboard donut drill-down** — clicking a slice filters `/submissions` by status
+6. **E2E smoke tests** — Playwright over the dashboard + login + workflow happy paths
+7. **Root README** — currently all docs live in CLAUDE.md; onboarding would benefit from a lighter-weight entry point
+
+**Blocked on external input:**
+8. **Real HIS API end-to-end** — needs staging creds from HIS team
+9. **CHI REP parser** — needs sample REP file + auth details; current `chi.go` assumes Basic auth but the CHI portal actually uses form-login (documented block — do not code blind)
+10. **`NexClaim_HIS_Integration_Spec.xlsx`** referenced here but missing from repo — HIS team to provide
 
 ---
 

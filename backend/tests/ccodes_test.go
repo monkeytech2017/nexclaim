@@ -22,13 +22,17 @@ import (
 // ── in-memory CCodeRepo fake (for handler tests) ──
 
 type memCCodeRepo struct {
-	mu      sync.Mutex
-	rows    map[string]store.CCodeRow
-	nextIdx int
+	mu        sync.Mutex
+	rows      map[string]store.CCodeRow
+	nextIdx   int
+	hcodeByID map[string]string // test-seeded: id → hcode for GetHcode scope checks
 }
 
 func newMemCCodeRepo() *memCCodeRepo {
-	return &memCCodeRepo{rows: make(map[string]store.CCodeRow)}
+	return &memCCodeRepo{
+		rows:      make(map[string]store.CCodeRow),
+		hcodeByID: make(map[string]string),
+	}
 }
 
 func (m *memCCodeRepo) Insert(_ context.Context, row store.CCodeInsert) (string, error) {
@@ -81,6 +85,12 @@ func (m *memCCodeRepo) Resolve(_ context.Context, id, by string) error {
 
 func (m *memCCodeRepo) LookupClaimRecord(_ context.Context, _, _, _, _, _ string) (string, string) {
 	return "", "" // fake: never match, caller falls back
+}
+
+func (m *memCCodeRepo) GetHcode(_ context.Context, id string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.hcodeByID[id], nil
 }
 
 // ── handler tests ──

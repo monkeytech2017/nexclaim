@@ -18,7 +18,10 @@ vendor/
 *.swo
 
 # Claude Code working state (worktrees, plans)
-.claude/
+.claude/*
+# — but DO ship the agent team (briefings for future sessions):
+!.claude/agents/
+!.claude/agents/**
 
 # OS
 .DS_Store
