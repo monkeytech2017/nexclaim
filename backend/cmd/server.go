@@ -75,6 +75,7 @@ func runServer(args []string) {
 	var fieldMapRepo store.FieldMapRepo
 	var ccodeRepo store.CCodeRepo
 	var claimBatchRepo store.ClaimBatchRepo
+	var tmtRepo store.TmtRepo
 	var sendLogRepo store.SendLogRepo
 	var dashboardRepo store.DashboardRepo
 	var repIngester *store.REPIngester
@@ -98,6 +99,7 @@ func runServer(args []string) {
 			fieldMapRepo = store.NewPgFieldMapRepo(pg)
 			ccodeRepo = store.NewPgCCodeRepo(pg)
 			claimBatchRepo = store.NewPgClaimBatchRepo(pg)
+			tmtRepo = store.NewPgTmtRepo(pg)
 			sendLogRepo = store.NewPgSendLogRepo(pg)
 			dashboardRepo = store.NewPgDashboardRepo(pg)
 			repIngester = store.NewREPIngester(pg, ccodeRepo, fdh)
@@ -155,6 +157,7 @@ func runServer(args []string) {
 		FieldMapRepo:   fieldMapRepo,
 		CCodeRepo:      ccodeRepo,
 		ClaimBatchRepo: claimBatchRepo,
+		TmtRepo:        tmtRepo,
 		SendLogRepo:    sendLogRepo,
 		DashboardRepo:  dashboardRepo,
 		REPIngester:    repIngester,

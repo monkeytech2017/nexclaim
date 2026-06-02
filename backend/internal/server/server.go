@@ -67,6 +67,9 @@ type Deps struct {
 	FieldMapRepo   store.FieldMapRepo
 	CCodeRepo      store.CCodeRepo
 	ClaimBatchRepo store.ClaimBatchRepo
+	// TmtRepo backs the read-only GET /api/v1/master/tmt browse/search.
+	// Nil = endpoint returns 503.
+	TmtRepo        store.TmtRepo
 	SendLogRepo    store.SendLogRepo
 	DashboardRepo  store.DashboardRepo
 	REPIngester    *store.REPIngester
@@ -208,6 +211,10 @@ func New(d Deps) *gin.Engine {
 	master.POST("/icd-maps", upsertIcdMapHandler(d))
 	master.POST("/icd-maps/bulk", bulkIcdMapsHandler(d))
 	master.DELETE("/icd-maps/:hcode/:icdType/:hisIcdCode", deleteIcdMapHandler(d))
+
+	// Read-only TMT drug master browse/search (no write routes — bulk-imported
+	// reference data).
+	master.GET("/tmt", listTmtHandler(d))
 
 	master.GET("/field-maps", listFieldMapsHandler(d))
 	master.POST("/field-maps", upsertFieldMapHandler(d))

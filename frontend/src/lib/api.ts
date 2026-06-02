@@ -449,6 +449,28 @@ export const drugMapsApi = {
     }),
 }
 
+// ── Master data: TMT standard drug (read-only) ──
+
+export interface TmtDrug {
+  tmt_code:      string
+  name_th:       string
+  generic_name?: string
+  strength?:     string
+  dosage_form?:  string
+  unit?:         string
+}
+
+export const tmtApi = {
+  search: (params: { q?: string; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (params.limit != null) qs.set('limit', String(params.limit))
+    if (params.offset != null) qs.set('offset', String(params.offset))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: TmtDrug[]; total: number }>(`/api/v1/master/tmt${suffix}`)
+  },
+}
+
 // ── Master data: HIS doctor mapping ──
 
 export interface DoctorMap {

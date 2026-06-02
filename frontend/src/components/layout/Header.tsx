@@ -18,6 +18,7 @@ const titles: Record<string, string> = {
   '/admin/doctors':     'แพทย์',
   '/admin/inscl-maps':  'INSCL Mapping (HIS PTTYPE → NHSO INSCL)',
   '/admin/drug-maps':   'Drug Mapping (HIS Drug → TMT24)',
+  '/admin/tmt':         'TMT Master (ยามาตรฐาน 24 หลัก)',
   '/admin/doctor-maps': 'Doctor Mapping (HIS Doctor → DRDX)',
   '/admin/icd-maps':    'ICD Mapping (HIS ICD → ICD-10/9CM)',
   '/admin/field-maps':  'Field Mapping (HIS column → target spec)',
