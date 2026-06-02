@@ -2,10 +2,70 @@
 
 const BASE = '/api/backend'
 
+// ── Typed errors ─────────────────────────────────────────────────────────────
+// AuthError → missing/invalid API key (HTTP 401).
+// ScopeError → key valid but lacks scope for this resource (HTTP 403).
+// Both extend Error so existing `error instanceof Error` callers keep working.
+
+export class AuthError extends Error {
+  constructor(message = 'ไม่ได้รับอนุญาต (401) — ตรวจสอบ API key') {
+    super(message)
+    this.name = 'AuthError'
+  }
+}
+
+export class ScopeError extends Error {
+  constructor(message = 'ไม่มีสิทธิ์เข้าถึงข้อมูลนี้ (403)') {
+    super(message)
+    this.name = 'ScopeError'
+  }
+}
+
+// ── API key storage (browser localStorage) ──
+// Primary: key stored via login page. Fallback: NEXT_PUBLIC_API_KEY env (DEV only).
+
+const API_KEY_STORAGE = 'nexclaim.apiKey'
+
+export const storedApiKey = (): string | null => {
+  if (typeof window === 'undefined') return null
+  try {
+    const v = localStorage.getItem(API_KEY_STORAGE)
+    return v && v.length > 0 ? v : null
+  } catch {
+    return null
+  }
+}
+
+export const setApiKey = (key: string): void => {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(API_KEY_STORAGE, key)
+}
+
+export const clearApiKey = (): void => {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(API_KEY_STORAGE)
+  } catch {
+    // ignore — private-mode browsers may throw
+  }
+}
+
+function authHeader(): Record<string, string> {
+  const stored = storedApiKey()
+  if (stored) return { Authorization: `Bearer ${stored}` }
+  const env = process.env.NEXT_PUBLIC_API_KEY
+  if (env) return { Authorization: `Bearer ${env}` }
+  return {}
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeader(),
+      ...(options?.headers ?? {}),
+    },
   })
   if (!res.ok) {
     let msg: string
@@ -15,6 +75,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     } catch {
       msg = await res.text()
     }
+    if (res.status === 401) throw new AuthError(msg || undefined)
+    if (res.status === 403) throw new ScopeError(msg || undefined)
     throw new Error(`${res.status}: ${msg}`)
   }
   if (res.status === 204) return undefined as T
@@ -84,6 +146,89 @@ export const submitDirect = (body: DirectSubmitRequest) =>
 export interface StatusResponse { txnId: string; status: string; message: string }
 export const getStatus = (txnId: string) =>
   request<StatusResponse>(`/api/status/${encodeURIComponent(txnId)}`)
+
+// ── Auth / whoami ──
+
+export interface Identity {
+  id: string
+  role: 'admin' | 'hospital'
+  hcode?: string
+  name: string
+}
+export const authApi = {
+  whoami: () => request<Identity>('/api/v1/auth/whoami'),
+}
+
+// ── API keys (admin-only management) ──
+
+export interface APIKey {
+  id:            string
+  name:          string
+  role:          'admin' | 'hospital'
+  hcode?:        string
+  is_active:     boolean
+  created_at:    string
+  last_used_at?: string
+  // expires_at: nil/absent means "never expires" (back-compat default).
+  // When present, the backend rejects the key after this timestamp.
+  expires_at?:   string
+}
+
+export interface APIKeyCreateResponse extends APIKey {
+  raw_key: string   // populated ONLY on POST response — shown to user once
+}
+
+export const apiKeysApi = {
+  list:       () => request<{ items: APIKey[] }>('/api/v1/auth/keys'),
+  // ttl_days: optional integer. 0/absent = no expiry; positive = now + N days.
+  // Negative → backend returns 400.
+  create:     (body: { role: 'admin' | 'hospital'; hcode?: string; name: string; ttl_days?: number }) =>
+                request<APIKeyCreateResponse>('/api/v1/auth/keys', { method: 'POST', body: JSON.stringify(body) }),
+  setActive:  (id: string, is_active: boolean) =>
+                request<APIKey>(`/api/v1/auth/keys/${encodeURIComponent(id)}`, {
+                  method: 'PATCH', body: JSON.stringify({ is_active }),
+                }),
+}
+
+// ── Audit log (admin-only, append-only) ──
+
+export interface AuditEntry {
+  id:           string
+  actor_id?:    string
+  actor_role?:  string
+  actor_name?:  string
+  action:       string
+  target_kind?: string
+  target_id?:   string
+  hcode?:       string
+  payload?:     Record<string, unknown>
+  created_at:   string
+}
+
+export const auditApi = {
+  list: (filter: {
+    action?:       string
+    actor_id?:     string
+    hcode?:        string
+    target_kind?:  string
+    target_id?:    string
+    from?:         string
+    to?:           string
+    limit?:        number
+  }) => {
+    const qs = new URLSearchParams()
+    if (filter.action)      qs.set('action', filter.action)
+    if (filter.actor_id)    qs.set('actor_id', filter.actor_id)
+    if (filter.hcode)       qs.set('hcode', filter.hcode)
+    if (filter.target_kind) qs.set('target_kind', filter.target_kind)
+    if (filter.target_id)   qs.set('target_id', filter.target_id)
+    if (filter.from)        qs.set('from', filter.from)
+    if (filter.to)          qs.set('to', filter.to)
+    if (filter.limit)       qs.set('limit', String(filter.limit))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: AuditEntry[] }>(`/api/v1/audit-log${suffix}`)
+  },
+}
 
 // ── OPD 2-Way: visits + batches ──
 
@@ -391,6 +536,46 @@ export const fieldMapsApi = {
     }),
 }
 
+// ── Submission history (claim_batch + joined c-code counts) ──
+
+export interface ClaimBatch {
+  batch_id:      string
+  hcode:         string
+  period:        string
+  inscl:         string
+  format:        string
+  sender:        string
+  // status values: 'pending' | 'sent' | 'error' | 'failed'
+  // 'failed' is a terminal state reached after max_attempts retries.
+  status:        string
+  total_records: number
+  valid_records: number
+  error_records: number
+  fdh_txn_id?:   string
+  zip_filename?: string
+  zip_md5?:      string
+  created_at:    string
+  sent_at?:      string
+  error_msg?:    string
+  c_code_count:  number
+  c_code_open:   number
+  // attempt_no = count of send attempts so far (1 = initial run, 2+ = retries).
+  attempt_no:    number
+  // next_retry_at populated while the retry worker still owns the batch.
+  next_retry_at?: string
+}
+
+export const claimBatchesApi = {
+  list: (filter: { hcode?: string; period?: string; inscl?: string; format?: string; status?: string }) => {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(filter)) if (v) qs.set(k, v)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: ClaimBatch[] }>(`/api/v1/claim/batches${suffix}`)
+  },
+  get: (id: string) =>
+    request<ClaimBatch>(`/api/v1/claim/batches/${encodeURIComponent(id)}`),
+}
+
 // ── C-code (REP feedback) ──
 
 export interface CCode {
@@ -435,6 +620,66 @@ export const ccodesApi = {
     request<IngestResult>(
       `/api/v1/claim/rep/${encodeURIComponent(hcode)}/${encodeURIComponent(period)}`,
       { method: 'POST' }),
+}
+
+// ── Send-log audit trail (every outbound FDH/CHI attempt) ──
+
+export interface SendLog {
+  id:             string
+  batch_id:       string
+  attempt_no:     number
+  endpoint:       string
+  http_status?:   number
+  fdh_txn_id?:    string
+  response_body?: string
+  duration_ms?:   number
+  success?:       boolean
+  error_msg?:     string
+  sent_at:        string
+  hcode:          string
+  period:         string
+  inscl:          string
+  format:         string
+}
+
+export const sendLogsApi = {
+  list: (filter: { batch_id?: string; hcode?: string; period?: string; success?: 'true' | 'false' | '' }) => {
+    const qs = new URLSearchParams()
+    if (filter.batch_id) qs.set('batch_id', filter.batch_id)
+    if (filter.hcode)    qs.set('hcode', filter.hcode)
+    if (filter.period)   qs.set('period', filter.period)
+    if (filter.success)  qs.set('success', filter.success)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: SendLog[] }>(`/api/v1/send-logs${suffix}`)
+  },
+}
+
+// ── Dashboard stats ──
+
+export interface DashboardStats {
+  summary: {
+    batches_total:     number
+    records_total:     number
+    records_errors:    number
+    ccodes_open:       number
+    avg_send_ms:       number
+    send_success_rate: number    // 0..1
+  }
+  by_format: { format: string; count: number; records: number }[]
+  by_status: { status: string; count: number }[]
+  by_day:    { day: string; formats: Record<string, number> }[]
+  top_ccodes:{ c_code: string; count: number; desc_sample: string }[]
+}
+
+export const dashboardApi = {
+  stats: (filter: { hcode?: string; period_from?: string; period_to?: string }) => {
+    const qs = new URLSearchParams()
+    if (filter.hcode)       qs.set('hcode', filter.hcode)
+    if (filter.period_from) qs.set('period_from', filter.period_from)
+    if (filter.period_to)   qs.set('period_to', filter.period_to)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<DashboardStats>(`/api/v1/dashboard/stats${suffix}`)
+  },
 }
 
 // ── Labels ──

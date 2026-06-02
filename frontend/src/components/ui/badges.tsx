@@ -37,3 +37,14 @@ export function InsclBadge({ inscl }: { inscl: string }) {
     </code>
   )
 }
+
+export function RoleBadge({ role }: { role: 'admin' | 'hospital' }) {
+  const cls = role === 'admin'
+    ? 'bg-gray-100 text-gray-700'
+    : 'bg-blue-50 text-blue-700'
+  return (
+    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
+      {role}
+    </span>
+  )
+}

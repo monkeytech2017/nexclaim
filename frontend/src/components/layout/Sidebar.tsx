@@ -15,9 +15,27 @@ import {
   FileCode2,
   AlertCircle,
   Columns3,
+  FileText,
+  Activity,
+  KeyRound,
+  ScrollText,
 } from 'lucide-react'
+import { useIdentity, useIsAdmin } from '@/lib/auth-context'
 
-const sections = [
+type SidebarItem = {
+  href:  string
+  label: string
+  icon:  typeof LayoutDashboard
+  hint?: string
+}
+
+type SidebarSection = {
+  title:       string
+  items:       SidebarItem[]
+  adminOnly?:  boolean
+}
+
+const sections: SidebarSection[] = [
   {
     title: 'การส่งเบิก',
     items: [
@@ -25,12 +43,15 @@ const sections = [
       { href: '/opd-batches', label: 'OPD Batches',  icon: Inbox, hint: 'HIS 2-way' },
       { href: '/ipd-imports', label: 'IPD Imports',  icon: FolderDown, hint: 'Share folder' },
       { href: '/claims',      label: 'ส่ง Claim',    icon: Send, hint: 'Dev/admin' },
-      { href: '/history',     label: 'ประวัติการส่ง', icon: History },
-      { href: '/c-codes',     label: 'C-code',       icon: AlertCircle, hint: 'REP feedback' },
+      { href: '/history',     label: 'Ingest History', icon: History, hint: 'OPD batches' },
+      { href: '/submissions', label: 'Submissions',    icon: FileText, hint: 'FDH/CHI' },
+      { href: '/send-logs',   label: 'Send Logs',      icon: Activity, hint: 'Audit trail' },
+      { href: '/c-codes',     label: 'C-code',         icon: AlertCircle, hint: 'REP feedback' },
     ],
   },
   {
-    title: 'Master Data',
+    title:     'Master Data',
+    adminOnly: true,
     items: [
       { href: '/admin/hospitals',   label: 'โรงพยาบาล',        icon: Building2 },
       { href: '/admin/doctors',     label: 'แพทย์',             icon: Stethoscope },
@@ -39,12 +60,19 @@ const sections = [
       { href: '/admin/doctor-maps', label: 'Doctor Mapping',    icon: UserCog,        hint: 'HIS→DRDX' },
       { href: '/admin/icd-maps',    label: 'ICD Mapping',       icon: FileCode2,      hint: 'HIS→WHO' },
       { href: '/admin/field-maps',  label: 'Field Mapping',     icon: Columns3,       hint: 'HIS col→spec' },
+      { href: '/admin/api-keys',    label: 'API Keys',          icon: KeyRound,       hint: 'Admin only' },
+      { href: '/admin/audit-log',   label: 'Audit Log',         icon: ScrollText,     hint: 'Admin only' },
     ],
   },
-] as const
+]
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const isAdmin = useIsAdmin()
+  const identity = useIdentity()
+  // admin OR auth-disabled (preserves dev UX when AUTH_ENABLED=false)
+  const showAdmin = isAdmin || identity === null
+  const visibleSections = sections.filter(s => !s.adminOnly || showAdmin)
 
   return (
     <aside className="w-60 bg-white border-r border-gray-100 flex flex-col flex-shrink-0">
@@ -63,7 +91,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-2 py-3 flex flex-col gap-3 overflow-auto">
-        {sections.map(section => (
+        {visibleSections.map(section => (
           <div key={section.title}>
             <div className="px-3 pt-1 pb-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
               {section.title}

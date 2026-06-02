@@ -1,21 +1,39 @@
 'use client'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ccodesApi, hospitalsApi } from '@/lib/api'
+import { useIdentity } from '@/lib/auth-context'
 import { LoadingBlock, ErrorBlock, EmptyBlock } from '@/components/ui/feedback'
-import { RefreshCw, CheckCircle2, Download } from 'lucide-react'
+import { RefreshCw, CheckCircle2, Download, X } from 'lucide-react'
 
 export default function CCodesPage() {
+  return (
+    <Suspense fallback={<LoadingBlock />}>
+      <CCodesContent />
+    </Suspense>
+  )
+}
+
+function CCodesContent() {
   const qc = useQueryClient()
-  const [filterHcode, setFilterHcode] = useState('')
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const batchFromURL = searchParams.get('batch') ?? ''
+  const codeFromURL = searchParams.get('c_code') ?? ''
+
+  const identity = useIdentity()
+  const isHospital = identity?.role === 'hospital'
+  const [filterHcode, setFilterHcode] = useState(isHospital ? identity.hcode ?? '' : '')
   const [filterPeriod, setFilterPeriod] = useState('')
   const [filterResolved, setFilterResolved] = useState<'' | 'true' | 'false'>('false')
-  const [filterCode, setFilterCode] = useState('')
+  const [filterCode, setFilterCode] = useState(codeFromURL)
 
   const hospitals = useQuery({ queryKey: ['hospitals'], queryFn: hospitalsApi.list })
   const list = useQuery({
-    queryKey: ['ccodes', filterHcode, filterPeriod, filterResolved, filterCode],
+    queryKey: ['ccodes', batchFromURL, filterHcode, filterPeriod, filterResolved, filterCode],
     queryFn: () => ccodesApi.list({
+      batch_id: batchFromURL || undefined,
       hcode:    filterHcode || undefined,
       period:   filterPeriod || undefined,
       resolved: filterResolved === '' ? undefined : filterResolved === 'true',
@@ -48,12 +66,25 @@ export default function CCodesPage() {
         หลังส่ง claim ใน period → รอ FDH process เสร็จ → กด "Fetch REP" เพื่อดึงผลลัพธ์.
       </p>
 
+      {batchFromURL && (
+        <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-900 flex items-center gap-2">
+          <span>filtering to batch:</span>
+          <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-blue-200">{batchFromURL}</code>
+          <button onClick={() => router.push('/c-codes')}
+            className="ml-auto inline-flex items-center gap-1 text-blue-700 hover:text-blue-900">
+            <X className="w-3 h-3" /> clear
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <select value={filterHcode}
           onChange={e => setFilterHcode(e.target.value)}
-          className="text-xs border border-gray-200 rounded-lg px-2 py-1">
+          disabled={isHospital}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1 disabled:bg-gray-50 disabled:text-gray-500">
           <option value="">เลือก รพ.</option>
           {hcodes.map(h => <option key={h} value={h}>{h}</option>)}
+          {isHospital && filterHcode && !hcodes.includes(filterHcode) && <option value={filterHcode}>{filterHcode}</option>}
         </select>
         <input
           type="text" value={filterPeriod}

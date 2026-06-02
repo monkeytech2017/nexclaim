@@ -2,7 +2,7 @@
 
 > **NexClaim** — Healthcare Claim Middleware
 > *Every claim, every fund — connected.*
-> อัปเดตล่าสุด: เมษายน 2569 (monorepo: `backend/` + `frontend/`)
+> อัปเดตล่าสุด: เมษายน 2569 (monorepo: `backend/` + `frontend/` · RDS Postgres th_TH.UTF-8 · Master CRUD + REP feedback loop + IPD watcher)
 
 ---
 
@@ -78,27 +78,56 @@ nexconnect/
 │   │   ├── batch/                        ← OPD ingest batch (interface + Memory/Pg impls)
 │   │   │   ├── store.go                  ← Store interface + MemoryStore + New helpers
 │   │   │   └── pg_store.go               ← Postgres-backed impl (opd_ingest_batch/_visit)
-│   │   ├── db/db.go                      ← sqlx connection pool (lib/pq driver)
+│   │   ├── ipdimport/processor.go        ← shared IPD pipeline (HTTP handler + watcher)
+│   │   ├── watcher/ipd.go                ← polling watcher (NFS/SMB-friendly, not fsnotify)
+│   │   ├── db/                           ← db.go (sqlx pool) + migrate.go (migration status)
 │   │   ├── generator/
 │   │   │   ├── file16/ (file16.go + records.go)  ← 16 แฟ้ม pipe-delimited
 │   │   │   ├── cipn/cipn.go              ← XML CIPN (IPD ข้าราชการ/อปท./OFC)
 │   │   │   ├── csop/csop.go              ← XML CSOP (OPD ข้าราชการ/อปท./OFC)
 │   │   │   ├── aipn/aipn.go              ← XML AIPN (IPD ประกันสังคม)
 │   │   │   └── ssop/ssop.go              ← XML SSOP (OPD ประกันสังคม)
-│   │   ├── validator/                    ← field.go, icd.go, rules.go
+│   │   ├── validator/                    ← field.go, icd.go, rules.go, masters.go
+│   │   │                                    (MasterValidator iface + NoopMaster/StaticMaster + LoadFromDB)
 │   │   ├── sender/                       ← fdh.go, chi.go, zip.go
-│   │   ├── response/                     ← ack.go, ccode.go
-│   │   ├── server/server.go              ← gin HTTP router + handlers
-│   │   └── util/                         ← date.go, str.go
+│   │   ├── response/                     ← ack.go, ccode.go (ParseREP)
+│   │   ├── store/                        ← Postgres repositories (sqlx)
+│   │   │   ├── claim_repo.go + claim_repo_pg.go       ← SaveRun (claim_batch + claim_record)
+│   │   │   ├── claim_batch_repo.go                    ← list/get submissions (joins c_code_log counts)
+│   │   │   ├── hospital_repo.go / doctor_repo.go      ← m_hospital / m_doctor CRUD
+│   │   │   ├── inscl_map_repo.go / drug_map_repo.go   ← his_inscl_map / his_drug_map
+│   │   │   ├── doctor_map_repo.go / icd_map_repo.go   ← his_doctor_map / his_icd_map
+│   │   │   ├── field_map_repo.go                      ← his_field_map
+│   │   │   ├── ccode_repo.go                          ← c_code_log CRUD + resolve
+│   │   │   ├── rep_ingest.go                          ← fetch + parse FDH REP → c_code_log
+│   │   │   └── master_loader.go                       ← load masters → validator
+│   │   ├── server/                       ← gin HTTP (split by concern)
+│   │   │   ├── server.go                 ← Deps struct + router
+│   │   │   ├── submissions.go            ← claim_batch list/get
+│   │   │   ├── ccodes.go                 ← c-code list/resolve + fetch REP
+│   │   │   ├── field_maps.go             ← his_field_map handlers
+│   │   │   └── bulk.go                   ← bulk CSV import (ICD/TMT/doctor)
+│   │   └── util/                         ← date.go, str.go (StrOr, etc.)
 │   ├── migrations/                       ← 000_create_database (th_TH.UTF-8), 001_master_data,
 │   │                                        002_his_mapping, 003_transactions, 004_ingest_batch
-│   ├── scripts/init_db.sh                ← wrapper: check locale + create DB + apply migrations
+│   ├── scripts/
+│   │   ├── init_db.sh                    ← check locale + create DB + apply migrations
+│   │   ├── create_user.sh + .sql         ← create role + GRANT CRUD (no TRUNCATE) — idempotent
+│   │   └── seed_master.sh                ← bulk-import ICD10/ICD9CM/TMT via HTTP
 │   ├── data/                             ← icd10.json, icd9cm.json, tmt.json, chrgitem.json
-│   └── tests/                            ← *_test.go (88 tests: router, pipeline, file16, cipn, csop,
-│                                             aipn, ssop, hisclient, sharefile, server, ipd_import, ...)
-└── frontend/                             ← Next.js 14 App Router (scaffold)
+│   └── tests/                            ← *_test.go (111 tests: router, pipeline, file16, cipn, csop,
+│                                             aipn, ssop, hisclient, sharefile, server, submissions,
+│                                             ccodes, ipd_import, *_pg integration [skip w/o DSN], ...)
+└── frontend/                             ← Next.js 14 App Router
     ├── package.json / tsconfig.json / tailwind.config.ts
-    └── src/ (app/, components/, lib/, types/)
+    └── src/
+        ├── app/(dashboard)/              ← dashboard, opd-batches, ipd-imports, claims,
+        │                                    history, submissions, c-codes,
+        │                                    admin/{hospitals,doctors,inscl-maps,drug-maps,
+        │                                           doctor-maps,icd-maps,field-maps}
+        ├── components/                   ← layout/{Sidebar,Header}, BulkImportModal,
+        │                                    SubmissionOutcome, ui/{feedback,badges}
+        └── lib/                          ← api.ts (typed client), csv.ts, providers.tsx
 ```
 
 ---
@@ -440,19 +469,49 @@ CHI (cs8.chi.or.th) — SSO Basic auth
 ## 9A. NexClaim HTTP API (gin)
 
 ```
+# Core
 GET  /healthz
 POST /api/submit                                    ← pipeline.Run ตรง (dev/admin)
 GET  /api/status/:txnId                             ← forward ไป FDH
+
+# HIS — OPD 2-Way
 POST /api/v1/his/opd/visits                         ← HIS push visit list → batchId
+GET  /api/v1/his/opd/batches                        ← list (filter: hcode, period, status)
 GET  /api/v1/his/opd/batches/:batchId               ← status ของ batch
 POST /api/v1/his/opd/batches/:batchId/process       ← fetch detail → pipeline
   ?dry_run=true                                       (skip FDH/CHI submit)
+
+# HIS — IPD Share Folder
 GET  /api/v1/his/ipd/imports                        ← list folders ใน incoming/
 POST /api/v1/his/ipd/imports/:exportId              ← parse → pipeline per INSCL
   ?dry_run=true                                       + move ไป processed/ หรือ error/
+
+# Submissions (claim_batch — what we sent to FDH/CHI)
+GET  /api/v1/claim/batches                          ← filter: hcode, period, inscl, format, status
+GET  /api/v1/claim/batches/:batchId                 ← detail + c_code counts
+
+# C-code feedback (from FDH REP)
+GET  /api/v1/ccodes                                 ← filter: batch_id, hcode, period, resolved, c_code
+POST /api/v1/ccodes/:id/resolve                     ← { by } → mark resolved
+POST /api/v1/rep/fetch                              ← { hcode, period } → download REP, parse, upsert
+
+# Master data — CRUD
+GET/POST/PATCH/DELETE  /api/v1/admin/hospitals[/:hcode]
+GET/POST/PATCH/DELETE  /api/v1/admin/doctors[/:code]
+GET/POST/PATCH/DELETE  /api/v1/admin/inscl-maps[/:id]
+GET/POST/PATCH/DELETE  /api/v1/admin/drug-maps[/:id]
+GET/POST/PATCH/DELETE  /api/v1/admin/doctor-maps[/:id]
+GET/POST/PATCH/DELETE  /api/v1/admin/icd-maps[/:id]
+GET/POST/PATCH/DELETE  /api/v1/admin/field-maps[/:id]
+
+# Bulk import (CSV) — per-row error isolation → BulkResult{total, imported, errors[]}
+POST /api/v1/admin/bulk/icd10      ← code, name_th, name_en
+POST /api/v1/admin/bulk/icd9cm     ← code, name_th, name_en
+POST /api/v1/admin/bulk/tmt        ← tmt24 (24 chars), name_th, name_en, strength, form
+POST /api/v1/admin/bulk/doctors    ← code, name_th, license_no, specialty
 ```
 
-Pipeline ทุกรอบทำ: **extract → validate → bucket by INSCL → generate (16-file/CIPN/CSOP/AIPN/SSOP) → zip+md5 → submit**.
+Pipeline ทุกรอบทำ: **extract → validate (inc. MasterValidator from DB) → bucket by INSCL → generate (16-file/CIPN/CSOP/AIPN/SSOP) → zip+md5 → submit → SaveRun (claim_batch+claim_record)**. REP fetch แล้ว `ParseREP` → upsert `c_code_log` (fallback: attach to latest batch ใน period ถ้า match ไม่เจอ).
 
 ---
 
@@ -485,6 +544,9 @@ func FormatDateTime(t time.Time) string { return t.Format("20060102150405") }
 - Date ทุก field ต้องผ่าน `util.ToAD()` หรือ `util.ParseHISDate()` ก่อนใส่ struct
 - Default ("" → "1" สำหรับ UUC) ใช้ `util.StrOr` — ห้าม copy `orDefault` helper ในแต่ละ package
 - ห้าม send โดยไม่ผ่าน validator ก่อน (pipeline block submit ถ้ามี validation errors + ไม่ใช่ dry-run)
+- **Repo pattern**: ทุก DB access ผ่าน interface ใน `store/` — handler รับ interface, `cmd/server.go` wire Pg impl. ทำให้ handler tests ใช้ in-memory fake ได้ (ดู `memClaimBatchRepo` ใน `tests/submissions_test.go`).
+- **ห้าม TRUNCATE ใน tests** — RDS role `nexclaim` มีแค่ CRUD; ใช้ `DELETE FROM` ไล่จาก child → parent (c_code_log → claim_record → claim_batch).
+- **Integration tests** skip ถ้า `POSTGRES_TEST_DSN` ว่าง (เพื่อให้ `go test ./...` บน dev laptop ผ่านโดยไม่ต้อง DB).
 - `go build ./...` และ `go test ./...` ต้องผ่านก่อน commit (รันจาก `backend/`)
 
 ---
@@ -492,19 +554,22 @@ func FormatDateTime(t time.Time) string { return t.Format("20060102150405") }
 ## 12. Environment Variables (`backend/.env`)
 
 ```env
-# Database (NexClaim's own Postgres — optional; ปัจจุบันยังไม่ต่อจริง)
+# Database (NexClaim Postgres — ถ้ามีค่า server เปิดใช้ store/ + master CRUD + submissions + c-codes)
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=nexclaim
-DB_USER=
+DB_USER=nexclaim
 DB_PASS=
+# เช่น: postgres://nexclaim:...@<rds-host>:5432/nexclaim?sslmode=require
+POSTGRES_TEST_DSN=        # tests/*_pg tests skip ถ้าว่าง
 
 # HIS API (OPD 2-Way) — ถ้ามีค่า server เปิดใช้ /api/v1/his/opd/batches/:id/process
 HIS_API_BASE_URL=
 HIS_API_TOKEN=            # Bearer token (หรือใช้ hisclient.WithAPIKey แทน)
 
-# IPD share folder — ถ้ามีค่า server เปิดใช้ /api/v1/his/ipd/*
+# IPD share folder — ถ้ามีค่า server เปิดใช้ /api/v1/his/ipd/* + auto-watcher
 IPD_SHARE_ROOT=           # เช่น /shared/nexclaim/ipd (ต้องมี incoming/ processed/ error/)
+IPD_WATCH_INTERVAL=30s    # polling interval (0 = ปิด watcher, ยังใช้ HTTP endpoint ได้)
 
 # FDH (ส่ง 16 แฟ้ม/CIPN/CSOP)
 FDH_BASE_URL=https://fdh.moph.go.th
@@ -528,6 +593,14 @@ ENV=production
 LOG_LEVEL=info
 ```
 
+### Frontend (`frontend/.env.local`)
+
+```env
+# API key ที่ออกจาก `nexclaim auth create-admin` (หรือ hospital key).
+# ปล่อยว่างได้ถ้า backend ตั้ง AUTH_ENABLED=false.
+NEXT_PUBLIC_API_KEY=
+```
+
 ---
 
 ## 13. Quick Start
@@ -541,21 +614,31 @@ cd nexclaim
 cd backend
 PGHOST=localhost PGUSER=postgres ./scripts/init_db.sh
 
+# สร้าง role สำหรับ app (idempotent — CRUD เท่านั้น, ไม่มี TRUNCATE)
+PGHOST=<rds> PGUSER=<admin> PGPASSWORD=<pw> ./scripts/create_user.sh nexclaim
+
 # ── Backend ──
 cp ../.env.example .env     # แก้ credentials
 go mod tidy
 go build -o nexclaim .
-go test ./...               # ต้องผ่านก่อน commit — ปัจจุบัน 90/90 (1 PgStore skip ถ้าไม่ตั้ง DSN)
-POSTGRES_TEST_DSN="postgres://user:pass@localhost/nexclaim?sslmode=disable" go test ./tests/... # รวม PgStore contract
+go test ./...               # ต้องผ่านก่อน commit — ปัจจุบัน 111/111 (Pg integration skip ถ้าไม่ตั้ง DSN)
+POSTGRES_TEST_DSN="postgres://nexclaim:...@<rds>/nexclaim?sslmode=require" go test ./tests/... # รวม Pg contract
+
+# Migrations + seed
+./nexclaim migrate status   # list migrations ที่ apply แล้ว / pending
+./nexclaim seed master      # seed m_inscl / m_agency / m_chrgitem / m_hospital(dev) จาก data/*.json
 
 # CLI
 ./nexclaim submit --inscl UCS --period 202504 --dry-run --hcode 12345
 ./nexclaim submit --inscl 011 --period 202504 --dry-run --hcode 12345
 ./nexclaim status --txn-id <id>
 
-# HTTP server (ใช้งานจริงจาก HIS หรือ frontend)
+# HTTP server (ใช้งานจริงจาก HIS หรือ frontend — เปิด watcher + master CRUD + REP feedback)
 ./nexclaim server --addr :8080
 curl http://localhost:8080/healthz
+
+# Bulk import master (หลัง server รัน) — ICD/TMT/doctor CSV
+./scripts/seed_master.sh data/icd10.csv data/icd9cm.csv data/tmt.csv
 
 # ── Frontend (Next.js 14) ──
 cd ../frontend
@@ -565,7 +648,65 @@ npm run dev
 
 ---
 
-## 14. References
+## 13A. Agent Team (`.claude/agents/`)
+
+Three specialized subagents cover the natural seams in this codebase. Delegate via the Agent tool — each is self-contained and briefed from its own file, so there's no need to re-explain conventions.
+
+| Agent | When to use | Scope |
+|-------|-------------|-------|
+| `nexclaim-backend`   | Anything under `backend/` — Go code, migrations, handlers, tests | Repo pattern, Pg conventions, pipeline flow, XML structs |
+| `nexclaim-frontend`  | Anything under `frontend/` — pages, components, `lib/api.ts`, Tailwind | App Router, React Query, BulkImportModal, Suspense rule |
+| `nexclaim-domain`    | Domain questions BEFORE implementation — INSCL routing, format selection, C-codes, CHRGITEM, spec xlsx | Read-only advisor, does not edit code |
+
+**Workflow pattern.** For cross-layer work, ask `nexclaim-domain` first (if there's any spec judgment), then run `nexclaim-backend` and `nexclaim-frontend` in **parallel** when their work is independent (e.g. a new endpoint + its UI page can be done at the same time — the frontend agent stubs against the typed API contract while the backend agent implements it). Use a single Agent tool message with multiple blocks for parallel spawn.
+
+**What the main agent still owns.** Cross-cutting decisions (adding a new slice to backlog, editing `CLAUDE.md`, coordinating PRs, confirming risky actions). Never delegate *understanding* — if a fix needs thought, do it yourself, don't shop it around.
+
+---
+
+## 14. Frontend (Next.js 14 App Router)
+
+Sidebar แบ่ง 2 กลุ่ม:
+
+**การส่งเบิก** (workflow) — Dashboard · OPD Batches · IPD Imports · Claims (submit) · History (ingest) · Submissions (outbound claim_batch) · C-codes (REP feedback)
+
+**Master Data** (admin CRUD) — Hospitals · Doctors · INSCL Maps · Drug Maps (→TMT24) · Doctor Maps (→DRDX) · ICD Maps · Field Maps (HIS column → target spec)
+
+- `/login` — paste API key → validate via `/api/v1/auth/whoami` → store in `localStorage` (`nexclaim.apiKey`); dashboard routes guarded by `AuthGuard` client-effect redirect; Header logout clears storage
+- `lib/api.ts` — typed client (ทุก endpoint); every hook ใช้ React Query → invalidate keys หลัง mutation
+- Admin pages share `BulkImportModal` (CSV auto-detect delimiter) + per-row error display (`BulkResult.errors`)
+- `SubmissionOutcome` — inline banner หลัง `fetchRep` (fetched/inserted/skipped/errors)
+- `/c-codes?batch=<id>` deep-links จาก Submissions table → filter C-code ตาม batch
+
+---
+
+## 15. Remaining Backlog
+
+**Shipped in recent sessions** (for reference — don't re-do):
+- ✓ Dashboard enrichment — Recharts stats endpoint + UI
+- ✓ send_log audit trail — pipeline.Attempt + DB table + UI
+- ✓ Auth middleware — API-key + scope + CLI + frontend
+- ✓ Login page + localStorage + logout
+- ✓ Admin key management UI (`/admin/api-keys`)
+- ✓ C-code resolve scope fix (`RequireCCodeHcodeMatch`)
+
+**Open — no external blocker:**
+1. **Audit log** — `audit_log` table + `/api/v1/audit-log` + admin viewer page (who created/deactivated keys, resolved which c-code, etc.)
+2. **Rate limiting** — simple token-bucket on `/login`, `/bootstrap`, `POST /api/v1/auth/keys`
+3. **Key TTL / expiry** — `api_key.expires_at` + middleware rejection + CLI `--ttl` flag
+4. **Send retry loop** — `send_log.attempt_no` schema is ready; need a worker that retries failed sends with backoff
+5. **Dashboard donut drill-down** — clicking a slice filters `/submissions` by status
+6. **E2E smoke tests** — Playwright over the dashboard + login + workflow happy paths
+7. **Root README** — currently all docs live in CLAUDE.md; onboarding would benefit from a lighter-weight entry point
+
+**Blocked on external input:**
+8. **Real HIS API end-to-end** — needs staging creds from HIS team
+9. **CHI REP parser** — needs sample REP file + auth details; current `chi.go` assumes Basic auth but the CHI portal actually uses form-login (documented block — do not code blind)
+10. **`NexClaim_HIS_Integration_Spec.xlsx`** referenced here but missing from repo — HIS team to provide
+
+---
+
+## 16. References
 
 | เอกสาร | URL |
 |--------|-----|
