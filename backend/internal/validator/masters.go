@@ -8,7 +8,9 @@ import (
 )
 
 // MasterValidator = lookup ว่า code ที่ใช้ใน claim เป็นรหัสที่ถูกต้องตาม master
-// (ICD-10 WHO, ICD-9CM, TMT 24 หลัก).
+// (ICD-10 WHO, ICD-9CM, TMT). TMT ในที่นี้คือ TMTID (Thai Medicines
+// Terminology โดย THIS/สวรส.) — running numeric id ปัจจุบัน 6–7 หลัก เก็บใน
+// คอลัมน์ tmt_code ไม่ใช่ "รหัสยา 24 หลัก" ของ สปสช. ซึ่งเป็นระบบ legacy คนละชุด.
 //
 // Implementations:
 //   NoopMaster   — always valid (tests / sample fixtures ที่ยังไม่ seed master)

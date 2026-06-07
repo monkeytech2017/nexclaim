@@ -30,6 +30,9 @@ type Processor struct {
 	CHI       pipeline.CHISubmitter     // required for SSS/SS4
 	ClaimRepo store.ClaimRepo           // nil → runs are not persisted
 	Master    validator.MasterValidator // nil → NoopMaster in pipeline
+	// TMTFactory (optional) builds a his_drug_map-backed HIS-drug-code → TMT
+	// resolver per hospital. Nil → byte-for-byte legacy behaviour.
+	TMTFactory extractor.TMTResolverFactory
 }
 
 // RunResult = outcome of one INSCL bucket within a single export.
@@ -62,6 +65,9 @@ func (p *Processor) Process(ctx context.Context, exportID string, dryRun bool) (
 	}
 
 	fx := extractor.NewFileExtractor(incoming)
+	if p.TMTFactory != nil {
+		fx = fx.WithTMTFactory(p.TMTFactory)
+	}
 	admits, err := fx.Admits()
 	if err != nil {
 		// archive the broken folder so watcher doesn't retry forever

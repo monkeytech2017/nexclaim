@@ -7,12 +7,20 @@ import (
 	"github.com/nexclaim/nexclaim/internal/util"
 )
 
+// TMTResolver แปลง HIS internal drug code → TMT 24 หลัก โดยอ้างอิง
+// his_drug_map ของโรงพยาบาล. คืน ok=false เมื่อไม่พบ mapping ที่ active.
+// nil resolver = ไม่มี DB mapping (in-memory/dry-run) → fallback เดิม.
+type TMTResolver func(hisCode string) (tmtCode string, ok bool)
+
 // ToOPDVisit แปลง HIS VisitDetail → domain model.OPDVisit.
 //
 // hn ส่งมาจาก VisitSummary ที่ HIS push ตอนแรก (detail response ไม่มี hn
 // — หลัก spec). isUCEP ถูก derive จาก INSCL=TPBS หรือมี accident + ที่รพ.
 // flag ว่าเป็น UCEP (ใน MVP = มี accident object).
-func ToOPDVisit(d *VisitDetail, hn string) model.OPDVisit {
+//
+// resolver (อาจเป็น nil) ใช้แปลง HIS internal drug code → TMT เมื่อ HIS
+// ไม่ได้ส่ง TMT มาเอง.
+func ToOPDVisit(d *VisitDetail, hn string, resolver TMTResolver) model.OPDVisit {
 	p := d.Patient
 	name := strings.TrimSpace(p.Prefix + p.FirstName + " " + p.LastName)
 	dob, _ := util.ParseHISDate(p.DOB)
@@ -51,11 +59,7 @@ func ToOPDVisit(d *VisitDetail, hn string) model.OPDVisit {
 		})
 	}
 	for _, dr := range d.Drug {
-		// tmt24 มาก่อน, fallback tmt_tp (โรงพยาบาลส่วนใหญ่ยังใช้ TP)
-		tmt := dr.TMT24
-		if tmt == "" {
-			tmt = dr.TMTTP
-		}
+		tmt := resolveTMT(dr.TMT24, dr.TMTTP, dr.HISItemID, resolver)
 		cost := 0.0
 		if dr.Quantity > 0 {
 			cost = dr.TotalPrice / dr.Quantity
@@ -80,4 +84,26 @@ func ToOPDVisit(d *VisitDetail, hn string) model.OPDVisit {
 		v.IsUCEP = true
 	}
 	return v
+}
+
+// resolveTMT decides the TMT id for one drug line.
+//
+// Resolution order:
+//  1. HIS-provided TMT wins: tmt24, else tmt_tp (non-empty).
+//  2. Otherwise consult the his_drug_map resolver (if wired) by HIS internal
+//     drug code; use its result only when non-empty.
+//  3. Otherwise keep the original fallback (tmtTP, which may be empty).
+func resolveTMT(tmt24, tmtTP, hisCode string, resolver TMTResolver) string {
+	if tmt24 != "" {
+		return tmt24
+	}
+	if tmtTP != "" {
+		return tmtTP
+	}
+	if resolver != nil && hisCode != "" {
+		if mapped, ok := resolver(hisCode); ok && mapped != "" {
+			return mapped
+		}
+	}
+	return tmtTP
 }

@@ -346,7 +346,7 @@ func BuildZipWithMD5(xmlContent []byte, filename string) ([]byte, error) {
 | 13 | AER | อุบัติเหตุ/ฉุกเฉิน | ถ้ามี | ถ้ามี | ถ้ามี |
 | 14 | ADP | ค่าใช้จ่ายอื่น / Project code | ถ้ามี | ✓ | ถ้ามี |
 | 15 | LVD | Leave day | ถ้ามี | ถ้ามี | ถ้ามี |
-| 16 | DRU | ยา (TMT 24 หลัก) | ✓ | ✓ | ✓ |
+| 16 | DRU | ยา (รหัส TMT = TMTID, running number 6–7 หลัก) | ✓ | ✓ | ✓ |
 
 ---
 
@@ -368,7 +368,8 @@ func IsValidPersonID(id string) bool {
 // UUC: "1" เสมอ
 // ICD-10: validate กับ data/icd10.json
 // ICD-9CM: validate กับ data/icd9cm.json
-// TMT: 24 หลัก
+// TMT: รหัส TMTID (Thai Medicines Terminology โดย THIS/สวรส.) — running number ปัจจุบัน 6–7 หลัก
+//      (NB: "รหัสยา 24 หลัก" ของ สปสช. เป็นระบบ legacy คนละชุด ไม่ใช่ TMT)
 ```
 
 **กฎเฉพาะสิทธิ:**

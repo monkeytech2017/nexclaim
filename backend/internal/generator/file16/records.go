@@ -254,7 +254,10 @@ func (r LVDRecord) ToLine() string {
 	return join(r.HN, r.AN, r.DateLeave, r.DateBack, r.DateServ)
 }
 
-// ── 16. DRU — ยา (TMT 24 หลัก) ─────────────────────────────────
+// ── 16. DRU — ยา (TMTID = TMT code, 6–7 หลัก running number) ────
+// TMTID ในที่นี้คือรหัส TMT (Thai Medicines Terminology โดย THIS/สวรส.)
+// ซึ่งเป็น running numeric id ปัจจุบัน 6–7 หลัก (เช่น 100005, 1314446)
+// ไม่ใช่ "รหัสยา 24 หลัก" ของ สปสช. ซึ่งเป็นระบบ legacy คนละชุดกัน
 type DRURecord struct {
 	HN       string
 	SEQOrAN  string
