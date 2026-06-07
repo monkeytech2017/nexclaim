@@ -16,6 +16,7 @@ type Config struct {
 	DBName           string
 	DBUser           string
 	DBPass           string
+	DBSSLMode        string
 	HISDBHost        string
 	HISDBPort        string
 	HISDBName        string
@@ -45,6 +46,7 @@ func Load() (*Config, error) {
 		DBName:           getEnv("DB_NAME", "nexclaim"),
 		DBUser:           os.Getenv("DB_USER"),
 		DBPass:           os.Getenv("DB_PASS"),
+		DBSSLMode:        getEnv("DB_SSLMODE", "disable"),
 		HISDBHost:        os.Getenv("HIS_DB_HOST"),
 		HISDBPort:        getEnv("HIS_DB_PORT", "3306"),
 		HISDBName:        os.Getenv("HIS_DB_NAME"),
@@ -75,8 +77,12 @@ func (c *Config) validate() error {
 }
 
 func (c *Config) DSN() string {
-	return fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=disable",
-		c.DBHost, c.DBPort, c.DBName, c.DBUser, c.DBPass)
+	ssl := c.DBSSLMode
+	if ssl == "" {
+		ssl = "disable"
+	}
+	return fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=%s",
+		c.DBHost, c.DBPort, c.DBName, c.DBUser, c.DBPass, ssl)
 }
 
 func getEnv(key, def string) string {
