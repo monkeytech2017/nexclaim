@@ -111,7 +111,6 @@ func (r *PgMasterDataRepo) ListTMT(ctx context.Context, q string, limit int) ([]
 		  AND ($1 = ''
 		       OR tmt_code                    ILIKE '%' || $1 || '%'
 		       OR COALESCE(name_th,'')        ILIKE '%' || $1 || '%'
-		       OR COALESCE(name_en,'')        ILIKE '%' || $1 || '%'
 		       OR COALESCE(generic_name,'')   ILIKE '%' || $1 || '%')
 		ORDER BY tmt_code
 		LIMIT $2

@@ -78,8 +78,9 @@ func (r *PgDrugMapRepo) Upsert(ctx context.Context, m DrugMap) (*DrugMap, error)
 	if m.HISDrugCode == "" {
 		return nil, fmt.Errorf("his_drug_code required")
 	}
-	if m.TMTCode != "" && len(m.TMTCode) != 24 {
-		return nil, fmt.Errorf("tmt_code must be 24 chars when provided")
+	// TMTID จริงเป็น running number 6–7 หลัก (คอลัมน์ VARCHAR(24) ตั้งแต่ migration 005)
+	if m.TMTCode != "" && len(m.TMTCode) > 24 {
+		return nil, fmt.Errorf("tmt_code must be at most 24 chars when provided")
 	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO his_drug_map (hcode, his_drug_code, tmt_code, his_drug_name, note, is_active)

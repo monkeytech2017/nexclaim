@@ -255,8 +255,9 @@ func upsertTMT(ctx context.Context, db *sqlx.DB, rows []tmtRow) (int, error) {
 	}
 	defer stmt.Close()
 	for _, r := range rows {
-		if len(r.TMTCode) != 24 {
-			return 0, fmt.Errorf("tmt_code %q: want 24 chars, got %d", r.TMTCode, len(r.TMTCode))
+		// TMTID จริงเป็น running number 6–7 หลัก (คอลัมน์ VARCHAR(24))
+		if r.TMTCode == "" || len(r.TMTCode) > 24 {
+			return 0, fmt.Errorf("tmt_code %q: want 1-24 chars, got %d", r.TMTCode, len(r.TMTCode))
 		}
 		if _, err := stmt.ExecContext(ctx, r.TMTCode, r.NameTH, r.GenericName, r.Strength, r.DosageForm, r.Unit); err != nil {
 			return 0, fmt.Errorf("tmt %s: %w", r.TMTCode, err)

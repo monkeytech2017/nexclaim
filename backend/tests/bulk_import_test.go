@@ -17,11 +17,11 @@ func TestBulkDrugMaps(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]any{
 		"items": []map[string]any{
-			{"hcode": "12345", "his_drug_code": "D001", "tmt_code": "100000000000000000000001", "is_active": true},
-			{"hcode": "12345", "his_drug_code": "D002", "tmt_code": "100000000000000000000002", "is_active": true},
-			{"hcode": "12345", "his_drug_code": "D003", "tmt_code": "TOOSHORT", "is_active": true}, // bad — 8 chars
-			{"hcode": "XXX", "his_drug_code": "D004", "is_active": true},                          // bad — hcode != 5 chars
-			{"hcode": "12345", "his_drug_code": "D005", "is_active": true},                        // ok — no TMT (mapping pending)
+			{"hcode": "12345", "his_drug_code": "D001", "tmt_code": "1314446", "is_active": true}, // ok — TMTID 7 หลัก
+			{"hcode": "12345", "his_drug_code": "D002", "tmt_code": "100005", "is_active": true},  // ok — TMTID 6 หลัก
+			{"hcode": "12345", "his_drug_code": "D003", "tmt_code": "1234567890123456789012345", "is_active": true}, // bad — 25 chars
+			{"hcode": "XXX", "his_drug_code": "D004", "is_active": true},   // bad — hcode != 5 chars
+			{"hcode": "12345", "his_drug_code": "D005", "is_active": true}, // ok — no TMT (mapping pending)
 		},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/master/drug-maps/bulk", bytes.NewReader(body))

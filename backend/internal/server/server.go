@@ -1089,6 +1089,8 @@ func DrugMapTMTFactory(repo store.DrugMapRepo) extractor.TMTResolverFactory {
 		}
 		maps, err := repo.List(ctx, hcode)
 		if err != nil {
+			// nil resolver = fallback ไป legacy behaviour — ต้อง log ไม่งั้น TMT หายเงียบ
+			fmt.Fprintf(os.Stderr, "[NexClaim] drug map load failed (hcode=%s): %v — TMT mapping disabled for this run\n", hcode, err)
 			return nil
 		}
 		idx := make(map[string]string, len(maps))

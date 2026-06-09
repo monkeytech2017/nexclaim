@@ -7,7 +7,7 @@ import (
 	"github.com/nexclaim/nexclaim/internal/util"
 )
 
-// TMTResolver แปลง HIS internal drug code → TMT 24 หลัก โดยอ้างอิง
+// TMTResolver แปลง HIS internal drug code → รหัส TMT (TMTID 6–7 หลัก) โดยอ้างอิง
 // his_drug_map ของโรงพยาบาล. คืน ok=false เมื่อไม่พบ mapping ที่ active.
 // nil resolver = ไม่มี DB mapping (in-memory/dry-run) → fallback เดิม.
 type TMTResolver func(hisCode string) (tmtCode string, ok bool)
