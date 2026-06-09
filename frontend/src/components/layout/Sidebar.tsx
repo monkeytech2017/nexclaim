@@ -19,6 +19,7 @@ import {
   Activity,
   KeyRound,
   ScrollText,
+  Database,
 } from 'lucide-react'
 import { useIdentity, useIsAdmin } from '@/lib/auth-context'
 
@@ -53,6 +54,7 @@ const sections: SidebarSection[] = [
     title:     'Master Data',
     adminOnly: true,
     items: [
+      { href: '/master',            label: 'Master Data',       icon: Database,        hint: 'ICD/TMT' },
       { href: '/admin/hospitals',   label: 'โรงพยาบาล',        icon: Building2 },
       { href: '/admin/doctors',     label: 'แพทย์',             icon: Stethoscope },
       { href: '/admin/inscl-maps',  label: 'INSCL Mapping',     icon: ArrowRightLeft, hint: 'HIS→NHSO' },

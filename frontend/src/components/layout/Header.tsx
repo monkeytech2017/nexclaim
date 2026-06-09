@@ -14,6 +14,7 @@ const titles: Record<string, string> = {
   '/submissions':     'Submissions (claim_batch ที่ส่งไป FDH/CHI)',
   '/send-logs':       'Send Logs (audit trail ทุกครั้งที่ส่งไป FDH/CHI)',
   '/c-codes':         'C-code (ข้อผิดพลาดจาก REP)',
+  '/master':            'Master Data (ข้อมูลมาตรฐาน ICD-10 / ICD-9CM / TMT)',
   '/admin/hospitals':   'โรงพยาบาล',
   '/admin/doctors':     'แพทย์',
   '/admin/inscl-maps':  'INSCL Mapping (HIS PTTYPE → NHSO INSCL)',

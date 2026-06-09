@@ -1,9 +1,10 @@
 // Package server เปิด REST API ด้วย gin — ใช้ pipeline + FDH/CHI ภายใน.
 //
 // Endpoints:
-//   GET  /healthz           — liveness
-//   POST /api/submit        — trigger pipeline.Run
-//   GET  /api/status/:txnId — forward to FDH
+//
+//	GET  /healthz           — liveness
+//	POST /api/submit        — trigger pipeline.Run
+//	GET  /api/status/:txnId — forward to FDH
 //
 // Server ถือ state น้อยที่สุด; business logic อยู่ที่ pipeline.
 package server
@@ -78,6 +79,9 @@ type Deps struct {
 	// action succeeds. Typically equal to AuditRepo (PgAuditRepo satisfies
 	// both). Nil falls back to audit.NoopWriter so tests/dev don't panic.
 	AuditWriter audit.Writer
+	// MasterDataRepo backs the read-only master viewer endpoints
+	// GET /api/v1/master/icd10, /icd9cm, /tmt. Nil = 503.
+	MasterDataRepo store.MasterDataRepo
 	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
 	Master validator.MasterValidator
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
@@ -214,6 +218,11 @@ func New(d Deps) *gin.Engine {
 	master.POST("/field-maps", upsertFieldMapHandler(d))
 	master.POST("/field-maps/bulk", bulkFieldMapsHandler(d))
 	master.DELETE("/field-maps/:id", deleteFieldMapHandler(d))
+
+	// Read-only master data viewer (ICD-10 / ICD-9CM / TMT drug).
+	master.GET("/icd10", listICD10Handler(d))
+	master.GET("/icd9cm", listICD9CMHandler(d))
+	master.GET("/tmt", listTMTHandler(d))
 
 	return r
 }

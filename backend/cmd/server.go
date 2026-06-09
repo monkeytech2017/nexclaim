@@ -82,6 +82,7 @@ func runServer(args []string) {
 	var auditRepo store.AuditRepo
 	var auditWriter audit.Writer = audit.NoopWriter{}
 	var retryRepo store.RetryRepo
+	var masterDataRepo store.MasterDataRepo
 	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
@@ -106,6 +107,7 @@ func runServer(args []string) {
 			auditRepo = pgAudit
 			auditWriter = pgAudit
 			retryRepo = store.NewPgRetryRepo(pg)
+			masterDataRepo = store.NewPgMasterDataRepo(pg)
 
 			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
 				fmt.Fprintf(os.Stderr, "[NexClaim] master validator load failed, falling back to noop: %v\n", err)
@@ -160,6 +162,7 @@ func runServer(args []string) {
 		REPIngester:     repIngester,
 		AuditRepo:       auditRepo,
 		AuditWriter:     auditWriter,
+		MasterDataRepo:  masterDataRepo,
 		Master:          master,
 		StatusLookup:    fdh,
 	})

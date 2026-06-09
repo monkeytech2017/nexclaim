@@ -50,3 +50,5 @@ backend/data/tmt.json
 backend/data/tmt_seed.sql
 backend/data/icd10.json
 backend/data/icd9cm.json
+backend/data/icd10_seed.sql
+backend/data/icd9cm_seed.sql
