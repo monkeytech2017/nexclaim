@@ -44,3 +44,11 @@ frontend/.next/
 frontend/node_modules/
 frontend/.env.local
 frontend/tsconfig.tsbuildinfo
+
+# Full master data (derived from licensed TMT release — load at deploy, keep only *.sample.json)
+backend/data/tmt.json
+backend/data/tmt_seed.sql
+backend/data/icd10.json
+backend/data/icd9cm.json
+backend/data/icd10_seed.sql
+backend/data/icd9cm_seed.sql

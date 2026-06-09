@@ -56,10 +56,13 @@ else
   psql -d postgres -v ON_ERROR_STOP=1 -f "$MIGRATIONS_DIR/000_create_database.sql"
 fi
 
-# Step 2: apply schema migrations
-for migration in 001_master_data.sql 002_his_mapping.sql 003_transactions.sql 004_ingest_batch.sql 005_api_key.sql 006_audit_log.sql 007_api_key_ttl.sql; do
-  echo "[init_db] applying $migration..."
-  psql -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$MIGRATIONS_DIR/$migration"
+# Step 2: apply schema migrations — scan directory (sorted) แทน hardcode กันตกหล่น
+# (000_create_database.sql ใช้ตอนสร้าง DB ใน step 1 แล้ว — ข้าม)
+for migration in "$MIGRATIONS_DIR"/*.sql; do
+  base="$(basename "$migration")"
+  [ "$base" = "000_create_database.sql" ] && continue
+  echo "[init_db] applying $base..."
+  psql -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$migration"
 done
 
 echo "[init_db] done."

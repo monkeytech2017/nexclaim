@@ -145,7 +145,7 @@ func TestHISClient_Health(t *testing.T) {
 
 func TestMapper_ToOPDVisit(t *testing.T) {
 	fix := visitDetailFixture()
-	v := hisclient.ToOPDVisit(&fix, "HN001234")
+	v := hisclient.ToOPDVisit(&fix, "HN001234", nil)
 	if v.Patient.HN != "HN001234" {
 		t.Errorf("HN should carry from summary, got %q", v.Patient.HN)
 	}
@@ -179,7 +179,7 @@ func TestMapper_UCEPFromAccident(t *testing.T) {
 	fix := visitDetailFixture()
 	fix.Insurance.INSCL = "UCS"
 	fix.Accident = &hisclient.VisitAccident{AEDate: "20250418", AEType: "1", Cause: "1"}
-	v := hisclient.ToOPDVisit(&fix, "HN1")
+	v := hisclient.ToOPDVisit(&fix, "HN1", nil)
 	if !v.IsUCEP {
 		t.Error("accident on non-TPBS INSCL should set IsUCEP=true")
 	}
@@ -189,7 +189,7 @@ func TestMapper_TPBS_NotUCEP(t *testing.T) {
 	fix := visitDetailFixture()
 	fix.Insurance.INSCL = "TPBS"
 	fix.Accident = &hisclient.VisitAccident{AEDate: "20250418"}
-	v := hisclient.ToOPDVisit(&fix, "HN1")
+	v := hisclient.ToOPDVisit(&fix, "HN1", nil)
 	if v.IsUCEP {
 		t.Error("TPBS has its own path, IsUCEP should stay false")
 	}
@@ -198,7 +198,7 @@ func TestMapper_TPBS_NotUCEP(t *testing.T) {
 func TestMapper_DrugFallbackToTMTTP(t *testing.T) {
 	fix := visitDetailFixture()
 	fix.Drug[0].TMT24 = "" // only TMT-TP available
-	v := hisclient.ToOPDVisit(&fix, "HN1")
+	v := hisclient.ToOPDVisit(&fix, "HN1", nil)
 	if v.Drugs[0].TMTID != "1004521" {
 		t.Errorf("should fallback to TMT-TP, got %q", v.Drugs[0].TMTID)
 	}

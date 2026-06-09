@@ -1,9 +1,10 @@
 // Package server เปิด REST API ด้วย gin — ใช้ pipeline + FDH/CHI ภายใน.
 //
 // Endpoints:
-//   GET  /healthz           — liveness
-//   POST /api/submit        — trigger pipeline.Run
-//   GET  /api/status/:txnId — forward to FDH
+//
+//	GET  /healthz           — liveness
+//	POST /api/submit        — trigger pipeline.Run
+//	GET  /api/status/:txnId — forward to FDH
 //
 // Server ถือ state น้อยที่สุด; business logic อยู่ที่ pipeline.
 package server
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -58,11 +60,11 @@ type Deps struct {
 	RateLimitPerMin int
 	// HospitalRepo backs the /api/v1/master/hospitals admin endpoints.
 	// Nil = return 503 (admin CRUD requires a database).
-	HospitalRepo  store.HospitalRepo
-	DoctorRepo    store.DoctorRepo
-	InsclMapRepo  store.InsclMapRepo
-	DrugMapRepo   store.DrugMapRepo
-	DoctorMapRepo store.DoctorMapRepo
+	HospitalRepo   store.HospitalRepo
+	DoctorRepo     store.DoctorRepo
+	InsclMapRepo   store.InsclMapRepo
+	DrugMapRepo    store.DrugMapRepo
+	DoctorMapRepo  store.DoctorMapRepo
 	IcdMapRepo     store.IcdMapRepo
 	FieldMapRepo   store.FieldMapRepo
 	CCodeRepo      store.CCodeRepo
@@ -77,6 +79,9 @@ type Deps struct {
 	// action succeeds. Typically equal to AuditRepo (PgAuditRepo satisfies
 	// both). Nil falls back to audit.NoopWriter so tests/dev don't panic.
 	AuditWriter audit.Writer
+	// MasterDataRepo backs the read-only master viewer endpoints
+	// GET /api/v1/master/icd10, /icd9cm, /tmt. Nil = 503.
+	MasterDataRepo store.MasterDataRepo
 	// Master backs ICD/TMT lookup in pipeline validation. Nil = noop.
 	Master validator.MasterValidator
 	// StatusLookup reads status by txnId. Usually a *sender.FDHClient.
@@ -214,6 +219,11 @@ func New(d Deps) *gin.Engine {
 	master.POST("/field-maps/bulk", bulkFieldMapsHandler(d))
 	master.DELETE("/field-maps/:id", deleteFieldMapHandler(d))
 
+	// Read-only master data viewer (ICD-10 / ICD-9CM / TMT drug).
+	master.GET("/icd10", listICD10Handler(d))
+	master.GET("/icd9cm", listICD9CMHandler(d))
+	master.GET("/tmt", listTMTHandler(d))
+
 	return r
 }
 
@@ -228,11 +238,11 @@ type SubmitRequest struct {
 }
 
 type SubmitResponse struct {
-	INSCL            string              `json:"inscl"`
-	OPDCount         int                 `json:"opdCount"`
-	IPDCount         int                 `json:"ipdCount"`
+	INSCL            string               `json:"inscl"`
+	OPDCount         int                  `json:"opdCount"`
+	IPDCount         int                  `json:"ipdCount"`
 	ValidationErrors []validationErrorDTO `json:"validationErrors,omitempty"`
-	Submissions      []submissionDTO     `json:"submissions"`
+	Submissions      []submissionDTO      `json:"submissions"`
 }
 
 type validationErrorDTO struct {
@@ -302,8 +312,8 @@ func submitHandler(d Deps) gin.HandlerFunc {
 		resp := outcomeToDTO(out)
 		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{
-				"error":    err.Error(),
-				"outcome":  resp,
+				"error":   err.Error(),
+				"outcome": resp,
 			})
 			return
 		}
@@ -467,10 +477,10 @@ func processBatchHandler(d Deps) gin.HandlerFunc {
 		}
 
 		type batchRunOutcome struct {
-			INSCL   string              `json:"inscl"`
-			VNCount int                 `json:"vn_count"`
-			Outcome *SubmitResponse     `json:"outcome,omitempty"`
-			Error   string              `json:"error,omitempty"`
+			INSCL   string          `json:"inscl"`
+			VNCount int             `json:"vn_count"`
+			Outcome *SubmitResponse `json:"outcome,omitempty"`
+			Error   string          `json:"error,omitempty"`
 		}
 		results := make([]batchRunOutcome, 0, len(buckets))
 
@@ -487,7 +497,8 @@ func processBatchHandler(d Deps) gin.HandlerFunc {
 				})
 				continue
 			}
-			apiExtr := extractor.NewAPIExtractor(d.Batches, d.HISClient, sub)
+			apiExtr := extractor.NewAPIExtractor(d.Batches, d.HISClient, sub).
+				WithTMTFactory(DrugMapTMTFactory(d.DrugMapRepo))
 			out, err := pipeline.Run(ctx, pipeline.Options{
 				HCode:  b.HospitalCode,
 				Period: b.Period,
@@ -588,11 +599,12 @@ func runImportHandler(d Deps) gin.HandlerFunc {
 		dryRun := c.Query("dry_run") == "true"
 
 		proc := &ipdimport.Processor{
-			Root:      d.IPDShareRoot,
-			FDH:       d.FDH,
-			CHI:       d.CHI,
-			ClaimRepo: d.ClaimRepo,
-			Master:    d.Master,
+			Root:       d.IPDShareRoot,
+			FDH:        d.FDH,
+			CHI:        d.CHI,
+			ClaimRepo:  d.ClaimRepo,
+			Master:     d.Master,
+			TMTFactory: DrugMapTMTFactory(d.DrugMapRepo),
 		}
 		res, err := proc.Process(c.Request.Context(), exportID, dryRun)
 		if err != nil && res == nil {
@@ -1063,3 +1075,37 @@ func persistRun(ctx context.Context, d Deps, hcode, period string, out *pipeline
 	}
 }
 
+// DrugMapTMTFactory builds a his_drug_map-backed TMT resolver factory for the
+// extractors. Returns nil when repo is nil (auth/in-memory mode) so the
+// extractor falls back to byte-for-byte legacy behaviour. The mapping is loaded
+// once per hospital (List(hcode)) and indexed; HIS internal drug code → TMT.
+func DrugMapTMTFactory(repo store.DrugMapRepo) extractor.TMTResolverFactory {
+	if repo == nil {
+		return nil
+	}
+	return func(ctx context.Context, hcode string) func(string) (string, bool) {
+		if hcode == "" {
+			return nil
+		}
+		maps, err := repo.List(ctx, hcode)
+		if err != nil {
+			// nil resolver = fallback ไป legacy behaviour — ต้อง log ไม่งั้น TMT หายเงียบ
+			fmt.Fprintf(os.Stderr, "[NexClaim] drug map load failed (hcode=%s): %v — TMT mapping disabled for this run\n", hcode, err)
+			return nil
+		}
+		idx := make(map[string]string, len(maps))
+		for _, m := range maps {
+			if !m.IsActive || m.TMTCode == "" {
+				continue
+			}
+			idx[strings.TrimSpace(m.HISDrugCode)] = m.TMTCode
+		}
+		if len(idx) == 0 {
+			return nil
+		}
+		return func(hisCode string) (string, bool) {
+			tmt, ok := idx[strings.TrimSpace(hisCode)]
+			return tmt, ok
+		}
+	}
+}

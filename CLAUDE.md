@@ -2,7 +2,7 @@
 
 > **NexClaim** — Healthcare Claim Middleware
 > *Every claim, every fund — connected.*
-> อัปเดตล่าสุด: เมษายน 2569 (monorepo: `backend/` + `frontend/` · RDS Postgres th_TH.UTF-8 · Master CRUD + REP feedback loop + IPD watcher)
+> อัปเดตล่าสุด: มิถุนายน 2569 (monorepo: `backend/` + `frontend/` · RDS Postgres th_TH.UTF-8 · Master CRUD + REP feedback loop + IPD watcher · TMT drug map + Master Data viewer)
 
 ---
 
@@ -346,7 +346,7 @@ func BuildZipWithMD5(xmlContent []byte, filename string) ([]byte, error) {
 | 13 | AER | อุบัติเหตุ/ฉุกเฉิน | ถ้ามี | ถ้ามี | ถ้ามี |
 | 14 | ADP | ค่าใช้จ่ายอื่น / Project code | ถ้ามี | ✓ | ถ้ามี |
 | 15 | LVD | Leave day | ถ้ามี | ถ้ามี | ถ้ามี |
-| 16 | DRU | ยา (TMT 24 หลัก) | ✓ | ✓ | ✓ |
+| 16 | DRU | ยา (รหัส TMT = TMTID, running number 6–7 หลัก) | ✓ | ✓ | ✓ |
 
 ---
 
@@ -368,7 +368,8 @@ func IsValidPersonID(id string) bool {
 // UUC: "1" เสมอ
 // ICD-10: validate กับ data/icd10.json
 // ICD-9CM: validate กับ data/icd9cm.json
-// TMT: 24 หลัก
+// TMT: รหัส TMTID (Thai Medicines Terminology โดย THIS/สวรส.) — running number ปัจจุบัน 6–7 หลัก
+//      (NB: "รหัสยา 24 หลัก" ของ สปสช. เป็นระบบ legacy คนละชุด ไม่ใช่ TMT)
 ```
 
 **กฎเฉพาะสิทธิ:**
@@ -689,20 +690,23 @@ Sidebar แบ่ง 2 กลุ่ม:
 - ✓ Login page + localStorage + logout
 - ✓ Admin key management UI (`/admin/api-keys`)
 - ✓ C-code resolve scope fix (`RequireCCodeHcodeMatch`)
+- ✓ Audit log — `audit_log` table (migration 006, append-only) + `GET /api/v1/audit-log` (`server/audit.go`)
+- ✓ Rate limiting — per-IP token-bucket on `/login`, `/bootstrap`, `POST /api/v1/auth/keys` (`auth/ratelimit.go`)
+- ✓ Key TTL / expiry — `api_key.expires_at` (migration 007) + middleware rejection + CLI `--ttl` flag
+- ✓ Send retry worker — exponential backoff over failed sends (`internal/retry/retry.go`, migration 008)
+- ✓ Dashboard donut drill-down — คลิก slice → `/submissions?status=...`
+- ✓ E2E smoke tests — Playwright 3 specs (`frontend/e2e/`: login→dashboard, submissions, logout)
+- ✓ Root README — onboarding entry point ที่ root (`README.md`)
+- ✓ TMT master + drug map — `tmt_code` VARCHAR migration (005) + `his_drug_map` resolver ใน pipeline
+- ✓ Master Data viewer — read-only ICD-10/ICD-9CM/TMT search/paginate (`/master`, `server/master_data.go`)
 
 **Open — no external blocker:**
-1. **Audit log** — `audit_log` table + `/api/v1/audit-log` + admin viewer page (who created/deactivated keys, resolved which c-code, etc.)
-2. **Rate limiting** — simple token-bucket on `/login`, `/bootstrap`, `POST /api/v1/auth/keys`
-3. **Key TTL / expiry** — `api_key.expires_at` + middleware rejection + CLI `--ttl` flag
-4. **Send retry loop** — `send_log.attempt_no` schema is ready; need a worker that retries failed sends with backoff
-5. **Dashboard donut drill-down** — clicking a slice filters `/submissions` by status
-6. **E2E smoke tests** — Playwright over the dashboard + login + workflow happy paths
-7. **Root README** — currently all docs live in CLAUDE.md; onboarding would benefit from a lighter-weight entry point
+1. **E2E coverage ขยาย** — smoke tests ยังครอบแค่ login/dashboard/submissions/logout; ยังไม่แตะ workflow ส่งเบิกจริง (OPD batch process, IPD import, REP fetch)
 
 **Blocked on external input:**
-8. **Real HIS API end-to-end** — needs staging creds from HIS team
-9. **CHI REP parser** — needs sample REP file + auth details; current `chi.go` assumes Basic auth but the CHI portal actually uses form-login (documented block — do not code blind)
-10. **`NexClaim_HIS_Integration_Spec.xlsx`** referenced here but missing from repo — HIS team to provide
+2. **Real HIS API end-to-end** — needs staging creds from HIS team
+3. **CHI REP parser** — needs sample REP file + auth details; current `chi.go` assumes Basic auth but the CHI portal actually uses form-login (documented block — do not code blind)
+4. **`NexClaim_HIS_Integration_Spec.xlsx`** referenced here but missing from repo — HIS team to provide
 
 ---
 

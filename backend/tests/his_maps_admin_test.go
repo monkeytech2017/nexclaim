@@ -51,8 +51,8 @@ func (m *memDrugMapRepo) Upsert(_ context.Context, v store.DrugMap) (*store.Drug
 	if len(v.HCode) != 5 || v.HISDrugCode == "" {
 		return nil, errors.New("hcode + his_drug_code required")
 	}
-	if v.TMTCode != "" && len(v.TMTCode) != 24 {
-		return nil, errors.New("tmt must be 24 chars")
+	if v.TMTCode != "" && len(v.TMTCode) > 24 {
+		return nil, errors.New("tmt must be at most 24 chars")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -143,17 +143,30 @@ func TestDrugMapAPI_UpsertListDelete(t *testing.T) {
 		t.Fatalf("POST want 200, got %d body=%s", w.Code, w.Body.String())
 	}
 
-	// Bad TMT (not 24 chars) rejected
+	// TMTID จริง 6–7 หลัก ต้องผ่าน (migration 005 เปลี่ยนเป็น VARCHAR(24))
 	body, _ = json.Marshal(map[string]any{
 		"hcode": "12345", "his_drug_code": "DRG002",
-		"tmt_code": "TOOSHORT",
+		"tmt_code": "1314446",
+	})
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/master/drug-maps", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("7-digit TMTID should return 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	// Bad TMT (longer than 24 chars) rejected
+	body, _ = json.Marshal(map[string]any{
+		"hcode": "12345", "his_drug_code": "DRG003",
+		"tmt_code": "1234567890123456789012345",
 	})
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/master/drug-maps", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("short TMT should return 400, got %d", w.Code)
+		t.Errorf("too-long TMT should return 400, got %d", w.Code)
 	}
 
 	// DELETE

@@ -22,10 +22,20 @@ type APIExtractor struct {
 	Store   batch.Store
 	Client  *hisclient.Client
 	BatchID string
+	// TMTFactory (optional) builds a HIS-drug-code → TMT resolver once the
+	// hospital code is known. Nil = legacy fallback only.
+	TMTFactory TMTResolverFactory
 }
 
-func NewAPIExtractor(store batch.Store, client *hisclient.Client, batchID string) *APIExtractor {
-	return &APIExtractor{Store: store, Client: client, BatchID: batchID}
+func NewAPIExtractor(st batch.Store, client *hisclient.Client, batchID string) *APIExtractor {
+	return &APIExtractor{Store: st, Client: client, BatchID: batchID}
+}
+
+// WithTMTFactory returns the extractor with a his_drug_map-backed resolver
+// factory wired for TMT translation. Safe to call with a nil factory (no-op).
+func (e *APIExtractor) WithTMTFactory(f TMTResolverFactory) *APIExtractor {
+	e.TMTFactory = f
+	return e
 }
 
 func (e *APIExtractor) Extract(ctx context.Context, _ Request) (Result, error) {
@@ -39,6 +49,8 @@ func (e *APIExtractor) Extract(ctx context.Context, _ Request) (Result, error) {
 
 	_ = e.Store.SetState(e.BatchID, batch.StateFetching, "")
 
+	resolver := resolverFor(e.TMTFactory, ctx, b.HospitalCode)
+
 	out := Result{}
 	for _, sum := range b.Visits {
 		if err := ctx.Err(); err != nil {
@@ -51,7 +63,7 @@ func (e *APIExtractor) Extract(ctx context.Context, _ Request) (Result, error) {
 			_ = e.Store.SetState(e.BatchID, batch.StateFailed, msg)
 			return out, fmt.Errorf("apiextractor: %s", msg)
 		}
-		visit := hisclient.ToOPDVisit(detail, sum.HN)
+		visit := hisclient.ToOPDVisit(detail, sum.HN, resolver)
 		// ถ้า INSCL ใน detail ว่าง ใช้ของ summary เป็น fallback
 		if visit.Patient.INSCL == "" {
 			visit.Patient.INSCL = model.INSCL(sum.INSCL)

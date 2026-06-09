@@ -82,6 +82,7 @@ func runServer(args []string) {
 	var auditRepo store.AuditRepo
 	var auditWriter audit.Writer = audit.NoopWriter{}
 	var retryRepo store.RetryRepo
+	var masterDataRepo store.MasterDataRepo
 	var master validator.MasterValidator = validator.NoopMaster{}
 	if cfg.DBUser != "" {
 		if pg, err := db.Open(cfg.DSN()); err != nil {
@@ -106,6 +107,7 @@ func runServer(args []string) {
 			auditRepo = pgAudit
 			auditWriter = pgAudit
 			retryRepo = store.NewPgRetryRepo(pg)
+			masterDataRepo = store.NewPgMasterDataRepo(pg)
 
 			if mv, counts, err := validator.LoadFromDB(context.Background(), pg); err != nil {
 				fmt.Fprintf(os.Stderr, "[NexClaim] master validator load failed, falling back to noop: %v\n", err)
@@ -135,33 +137,34 @@ func runServer(args []string) {
 	}
 
 	engine := server.New(server.Deps{
-		HCode:        hcode,
-		Extractor:    extr,
-		FDH:          fdh,
-		CHI:          chi,
-		HISClient:    hisCli,
-		Batches:      batches,
-		IPDShareRoot: ipdShareRoot,
-		ClaimRepo:    claimRepo,
+		HCode:           hcode,
+		Extractor:       extr,
+		FDH:             fdh,
+		CHI:             chi,
+		HISClient:       hisCli,
+		Batches:         batches,
+		IPDShareRoot:    ipdShareRoot,
+		ClaimRepo:       claimRepo,
 		AuthRepo:        authRepo,
 		AuthEnabled:     authEnabled,
 		RateLimitPerMin: rateLimitPerMin,
-		HospitalRepo:  hospitalRepo,
-		DoctorRepo:    doctorRepo,
-		InsclMapRepo:  insclMapRepo,
-		DrugMapRepo:   drugMapRepo,
-		DoctorMapRepo: doctorMapRepo,
-		IcdMapRepo:    icdMapRepo,
-		FieldMapRepo:   fieldMapRepo,
-		CCodeRepo:      ccodeRepo,
-		ClaimBatchRepo: claimBatchRepo,
-		SendLogRepo:    sendLogRepo,
-		DashboardRepo:  dashboardRepo,
-		REPIngester:    repIngester,
-		AuditRepo:      auditRepo,
-		AuditWriter:    auditWriter,
-		Master:         master,
-		StatusLookup:  fdh,
+		HospitalRepo:    hospitalRepo,
+		DoctorRepo:      doctorRepo,
+		InsclMapRepo:    insclMapRepo,
+		DrugMapRepo:     drugMapRepo,
+		DoctorMapRepo:   doctorMapRepo,
+		IcdMapRepo:      icdMapRepo,
+		FieldMapRepo:    fieldMapRepo,
+		CCodeRepo:       ccodeRepo,
+		ClaimBatchRepo:  claimBatchRepo,
+		SendLogRepo:     sendLogRepo,
+		DashboardRepo:   dashboardRepo,
+		REPIngester:     repIngester,
+		AuditRepo:       auditRepo,
+		AuditWriter:     auditWriter,
+		MasterDataRepo:  masterDataRepo,
+		Master:          master,
+		StatusLookup:    fdh,
 	})
 
 	// IPD auto-watcher: start if IPD_WATCH_INTERVAL is set (e.g. "60s", "5m").
@@ -171,11 +174,12 @@ func runServer(args []string) {
 			fmt.Fprintf(os.Stderr, "[NexClaim] IPD_WATCH_INTERVAL %q invalid: %v\n", raw, err)
 		} else if interval > 0 {
 			proc := &ipdimport.Processor{
-				Root:      ipdShareRoot,
-				FDH:       fdh,
-				CHI:       chi,
-				ClaimRepo: claimRepo,
-				Master:    master,
+				Root:       ipdShareRoot,
+				FDH:        fdh,
+				CHI:        chi,
+				ClaimRepo:  claimRepo,
+				Master:     master,
+				TMTFactory: server.DrugMapTMTFactory(drugMapRepo),
 			}
 			go (&watcher.IPD{Proc: proc, Interval: interval}).Run(context.Background())
 		}

@@ -16,6 +16,9 @@ import (
 // multiple pipeline runs (one per INSCL) without re-parsing.
 type FileExtractor struct {
 	Dir string
+	// TMTFactory (optional) builds a HIS-drug-code → TMT resolver once the
+	// manifest's hospital code is known. Nil = legacy fallback.
+	TMTFactory TMTResolverFactory
 
 	once    sync.Once
 	admits  []model.IPDAdmit
@@ -25,6 +28,15 @@ type FileExtractor struct {
 
 func NewFileExtractor(dir string) *FileExtractor {
 	return &FileExtractor{Dir: dir}
+}
+
+// WithTMTFactory returns the extractor with a his_drug_map-backed resolver
+// factory wired for TMT translation. Safe to call with a nil factory (no-op).
+// Must be called before the first Extract/Admits since the parse result is
+// cached.
+func (e *FileExtractor) WithTMTFactory(f TMTResolverFactory) *FileExtractor {
+	e.TMTFactory = f
+	return e
 }
 
 func (e *FileExtractor) load() error {
@@ -40,7 +52,8 @@ func (e *FileExtractor) load() error {
 			e.loadErr = fmt.Errorf("parse: %w", err)
 			return
 		}
-		admits, err := sharefile.Assemble(bundle)
+		resolver := resolverFor(e.TMTFactory, context.Background(), m.HospitalCode)
+		admits, err := sharefile.AssembleWithResolver(bundle, resolver)
 		if err != nil {
 			e.loadErr = fmt.Errorf("assemble: %w", err)
 			return

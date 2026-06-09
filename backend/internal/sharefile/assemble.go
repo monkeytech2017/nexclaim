@@ -8,6 +8,11 @@ import (
 	"github.com/nexclaim/nexclaim/internal/util"
 )
 
+// TMTResolver แปลง HIS internal drug code → รหัส TMT (TMTID 6–7 หลัก) โดยอ้างอิง
+// his_drug_map ของโรงพยาบาล. คืน ok=false เมื่อไม่พบ mapping ที่ active.
+// nil resolver = ไม่มี DB mapping (in-memory/dry-run) → fallback เดิม.
+type TMTResolver func(hisCode string) (tmtCode string, ok bool)
+
 // Assemble stitches the parsed row sets into []model.IPDAdmit.
 //
 // Joins:
@@ -22,6 +27,14 @@ import (
 // Missing PAT row for a given pid is treated as a hard error — spec says
 // PAT.csv must contain every patient referenced in IPD.csv.
 func Assemble(b *Bundle) ([]model.IPDAdmit, error) {
+	return AssembleWithResolver(b, nil)
+}
+
+// AssembleWithResolver is Assemble with an optional his_drug_map resolver used
+// to translate HIS internal drug codes → TMT when the HIS export does not
+// already supply a TMT code. A nil resolver yields behaviour identical to
+// Assemble.
+func AssembleWithResolver(b *Bundle, resolver TMTResolver) ([]model.IPDAdmit, error) {
 	if b == nil {
 		return nil, fmt.Errorf("assemble: nil bundle")
 	}
@@ -78,10 +91,7 @@ func Assemble(b *Bundle) ([]model.IPDAdmit, error) {
 			})
 		}
 		for _, dr := range druByAN[ipd.AN] {
-			tmt := dr.TMT24
-			if tmt == "" {
-				tmt = dr.TMTTP
-			}
+			tmt := resolveTMT(dr.TMT24, dr.TMTTP, dr.HISItemID, resolver)
 			cost := 0.0
 			if dr.Quantity > 0 {
 				cost = dr.TotalPrice / dr.Quantity
@@ -124,6 +134,28 @@ func patientFromRow(p PATRow, ipd IPDRow) model.Patient {
 		Amphur:     p.Amphur,
 		PermitNo:   ipd.PermitNo,
 	}
+}
+
+// resolveTMT decides the TMT id for one drug line.
+//
+// Resolution order:
+//  1. HIS-provided TMT wins: tmt24, else tmt_tp (non-empty).
+//  2. Otherwise consult the his_drug_map resolver (if wired) by HIS internal
+//     drug code; use its result only when non-empty.
+//  3. Otherwise keep the original fallback (tmtTP, which may be empty).
+func resolveTMT(tmt24, tmtTP, hisCode string, resolver TMTResolver) string {
+	if tmt24 != "" {
+		return tmt24
+	}
+	if tmtTP != "" {
+		return tmtTP
+	}
+	if resolver != nil && hisCode != "" {
+		if mapped, ok := resolver(hisCode); ok && mapped != "" {
+			return mapped
+		}
+	}
+	return tmtTP
 }
 
 func groupByAN[T any](rows []T, key func(T) string) map[string][]T {

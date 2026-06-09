@@ -41,7 +41,7 @@ export default function DrugMapsPage() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-gray-500">
-        แปลงรหัสยาใน HIS → TMT 24 หลัก. mapping ต่อ รพ. — pipeline ใช้ตารางนี้หา TMT ให้ drug ใน DRU.txt/DRUG XML.
+        แปลงรหัสยาใน HIS → รหัส TMT (TMTID 6–7 หลัก). mapping ต่อ รพ. — pipeline ใช้ตารางนี้หา TMT ให้ drug ใน DRU.txt/DRUG XML.
       </p>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -141,7 +141,7 @@ export default function DrugMapsPage() {
         <BulkImportModal<DrugMap>
           title="Bulk import drug mappings"
           required={['hcode', 'his_drug_code']}
-          sampleHint="columns อื่น ๆ: tmt_code (24 หลัก ถ้ามี), his_drug_name, note, is_active (true/false)"
+          sampleHint="columns อื่น ๆ: tmt_code (TMTID 6–7 หลัก ถ้ามี), his_drug_name, note, is_active (true/false)"
           toItem={r => ({
             hcode: r.hcode,
             his_drug_code: r.his_drug_code,
@@ -201,11 +201,11 @@ function Dialog({
               placeholder="เช่น AMLODIPINE 5MG TAB"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
           </Field>
-          <Field label="TMT24 (24 หลัก)" span={2}>
+          <Field label="TMT (TMTID 6–7 หลัก)" span={2}>
             <input type="text" maxLength={24}
               value={form.tmt_code ?? ''}
               onChange={e => setForm({ ...form, tmt_code: e.target.value })}
-              placeholder="100452100101010100000612"
+              placeholder="1314446"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
           </Field>
           <Field label="Note" span={2}>

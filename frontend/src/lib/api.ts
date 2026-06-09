@@ -682,6 +682,54 @@ export const dashboardApi = {
   },
 }
 
+// ── Master data: ICD-10 / ICD-9CM / TMT lookup (read-only search) ──
+
+export interface Icd10Master {
+  code:     string
+  name_th:  string
+  name_en:  string
+  chapter:  string
+}
+
+export interface Icd9cmMaster {
+  code:    string
+  name_th: string
+  name_en: string
+}
+
+export interface TmtMaster {
+  tmt_code:     string
+  name_th:      string
+  generic_name: string
+  strength:     string
+  dosage_form:  string
+  unit:         string
+}
+
+export const masterDataApi = {
+  icd10: (params?: { q?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.q)     qs.set('q', params.q)
+    if (params?.limit) qs.set('limit', String(params.limit))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: Icd10Master[]; count: number }>(`/api/v1/master/icd10${suffix}`)
+  },
+  icd9cm: (params?: { q?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.q)     qs.set('q', params.q)
+    if (params?.limit) qs.set('limit', String(params.limit))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: Icd9cmMaster[]; count: number }>(`/api/v1/master/icd9cm${suffix}`)
+  },
+  tmt: (params?: { q?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.q)     qs.set('q', params.q)
+    if (params?.limit) qs.set('limit', String(params.limit))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ items: TmtMaster[]; count: number }>(`/api/v1/master/tmt${suffix}`)
+  },
+}
+
 // ── Labels ──
 
 export const INSCL_LABELS: Record<INSCL, string> = {
